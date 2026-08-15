@@ -10,6 +10,8 @@ export { default as MentorSelectModal } from './MentorSelectModal'
 export type { MentorSelectModalProps } from './MentorSelectModal'
 export { default as MentorSelectField } from './MentorSelectField'
 export type { MentorSelectFieldProps } from './MentorSelectField'
+export { default as MentorSelectField2 } from './MentorSelectField2'
+export type { MentorSelectField2Props } from './MentorSelectField2'
 
 // 数据服务
 export { searchMentors, getMentorDetail } from './services/mentor'

@@ -189,7 +189,7 @@ export default function MentorSelectModal({
         onCancel={onCancel}
         onOk={handleOk}
         okButtonProps={{ loading: confirmLoading ?? submitting }}
-        maskClosable={false}
+        mask={{ closable: false }}
         destroyOnHidden
         width={900}
       >

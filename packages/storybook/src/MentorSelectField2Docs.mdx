@@ -1,0 +1,119 @@
+import { Meta } from '@storybook/blocks'
+
+<Meta title="Mentor/实现与使用文档" />
+
+# MentorSelectField 实现与使用文档
+
+两个组件功能等价，均提供"选择导师"的完整表单交互（弹窗搜索、行单选、详情回填、字段同步），差异在于 **字段绑定方式**。
+
+---
+
+## 架构对比
+
+### v1：隐藏 Input（MentorSelectField）
+
+```
+Form.Item (无 name, label + 按钮)        ← 外层只负责外观
+├── Table (展示已选导师)                   ← 只读视图
+└── Form.Item (name, noStyle)             ← 内层负责字段绑定
+    └── <Input style={{ display: 'none' }} />  ← 隐藏 Input 承接 value/onChange
+```
+
+- **值读取**：`Form.useWatch(name, form)` 订阅字段值
+- **值写入**：`form.setFieldValue(name, id)` 手动更新
+- **清空**：`form.setFieldValue(name, undefined)`
+- **校验**：内层 `noStyle` Form.Item 持有 `rules`，静默校验后由外层展示错误
+
+### v2：受控组件（MentorSelectField2）
+
+```
+Form.Item (name, label + 按钮, rules)     ← 单层，同时负责外观和字段绑定
+└── MentorFieldControl                    ← 受控子组件
+    ├── Table (展示已选导师)
+    └── MentorSelectModal (选择弹窗)
+```
+
+- **值读取**：`value` prop（Form.Item 通过 cloneElement 注入）
+- **值写入**：`onChange?.(id)`（antd 自动更新字段值 + 触发校验）
+- **清空**：`onChange?.(undefined)`
+- **校验**：Form.Item 自身持有 `rules`，与 antd 原生控件一致
+
+---
+
+## 核心原理：antd Form.Item 的 value/onChange 协议
+
+当 `Form.Item` 携带 `name` 属性时，会对**唯一子元素**执行 `React.cloneElement`，注入以下属性：
+
+| 注入属性 | 作用 |
+|---|---|
+| `value` | 当前字段值，随表单状态自动更新 |
+| `onChange` | 值变更回调，调用后 antd 自动更新字段值并触发校验 |
+| `id` | 字段唯一标识 |
+| `onBlur` | 失焦回调（默认 validateTrigger 之一） |
+
+这与 antd 内置的 `Select`、`DatePicker`、`Switch` 的机制完全一致——子组件只需声明 `value` 和 `onChange` 即可成为受控表单控件。
+
+### getValueFromEvent
+
+antd 默认通过 `getValueFromEvent` 从 `onChange` 参数中提取值：
+
+```ts
+function defaultGetValueFromEvent(valueProp, ...args) {
+  const arg = args[0]
+  if (arg?.target) {
+    return arg.target[valueProp]  // 是事件对象 → 取 e.target.value
+  }
+  return arg  // 不是事件 → 直接使用
+}
+```
+
+因此 v2 中 `onChange?.(mentor.id)` 会直接将 `mentor.id` 写入字段值，无需包装成事件对象。
+
+---
+
+## 使用方式
+
+两个组件对外 API 完全一致，使用方可任选：
+
+```tsx
+import { MentorSelectField } from '@workspace/ui'       // v1
+import { MentorSelectField2 } from '@workspace/ui'      // v2
+
+<Form form={form}>
+  <MentorSelectField name="mentorId" label="指导导师" />
+</Form>
+
+<Form form={form}>
+  <MentorSelectField2 name="mentorId" label="指导导师" />
+</Form>
+```
+
+提交时获取值的方式也相同：
+
+```tsx
+const values = form.getFieldsValue()
+console.log(values.mentorId)  // "U00003"
+```
+
+---
+
+## 支持的 Props
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `name` | `string` | — | Form 字段名，存储导师主键 id（必填） |
+| `label` | `ReactNode` | `'导师'` | 表单项标签 |
+| `required` | `boolean` | `true` | 是否必填 |
+| `rules` | `Rule[]` | — | 自定义校验规则，不传则按 required 自动生成 |
+| `modalTitle` | `string` | `'选择导师'` | 弹窗标题 |
+
+---
+
+## 何时选择哪个版本
+
+| 场景 | 推荐 | 原因 |
+|---|---|---|
+| 追求 antd 原生范式、最少代码 | v2 | 受控组件是 antd 的标准模式，无需隐藏 Input 和 Form.useWatch |
+| 展示层与字段绑定需要完全解耦 | v1 | 外层 Form.Item 可自由组合任意展示组件，字段绑定由内层独立完成 |
+| 需要将已有展示组件快速接入表单 | v2 | 只需给现有组件加 `value`/`onChange` 即可 |
+| 技术分享/教学 | 两者并列 | 完整展示 antd Form 的两种字段绑定范式 |

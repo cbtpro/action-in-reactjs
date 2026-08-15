@@ -46,7 +46,7 @@ function DefaultStory() {
   const [selected, setSelected] = useState<MentorUser | null>(null)
 
   return (
-    <Space direction="vertical" size="large">
+    <Space orientation="vertical" size="large">
       <Button type="primary" onClick={() => setOpen(true)}>
         打开选择导师弹窗
       </Button>
