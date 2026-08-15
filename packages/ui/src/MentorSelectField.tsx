@@ -4,7 +4,7 @@ import type { ColumnsType } from 'antd/es/table/interface'
 import type { Rule } from 'antd/es/form'
 import { CloseOutlined, UserOutlined } from '@ant-design/icons'
 import MentorSelectModal from './MentorSelectModal'
-import { getMentorDetail, type MentorUser } from '@/services/mentor'
+import { getMentorDetail, type MentorUser } from './services/mentor'
 
 export interface MentorSelectFieldProps {
   /** Form 字段名,存储导师主键 id */

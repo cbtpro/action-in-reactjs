@@ -13,7 +13,7 @@ import type { ColumnsType, TableRowSelection } from 'antd/es/table/interface'
 import {
   searchMentors,
   type MentorUser,
-} from '@/services/mentor'
+} from './services/mentor'
 
 export interface MentorSelectModalProps {
   /** 是否打开弹窗 */

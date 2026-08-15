@@ -17,7 +17,7 @@ import {
 } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import DynamicListItem from './DynamicListItem'
-import MentorSelectField from '@/components/MentorSelectField'
+import { MentorSelectField } from '@workspace/ui'
 import type { FormData } from './types'
 
 const { Title, Text } = Typography

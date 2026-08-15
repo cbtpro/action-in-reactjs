@@ -1,21 +1,12 @@
 import { http, HttpResponse } from 'msw'
+import type { MentorUser } from '../services/mentor'
 
 /**
- * 导师(用户)数据契约(与 services/mentor.ts 保持一致)
+ * 导师(用户)数据契约
  *
- * 仅在 mocks 层内部使用的重复定义:
- * - 避免 mocks → services 循环引用
- * - 遵循开闭原则:mock 层可以独立演进,不影响真实服务层
+ * 类型从 services/mentor.ts 导入,保证 mock 与真实服务层类型一致;
+ * 同包内单向依赖(mock → service),不存在循环引用。
  */
-interface MentorUser {
-  id: string
-  name: string
-  employeeNo: string
-  department: string
-  title: string
-  phone: string
-  email: string
-}
 
 /* ------------------------------------------------------------------ */
 /*  Mock 数据源                                                         */

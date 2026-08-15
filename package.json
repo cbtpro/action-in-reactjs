@@ -4,29 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
-    "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@ant-design/icons": "^6.3.2",
-    "@reduxjs/toolkit": "^2.12.0",
-    "antd": "^6.6.0",
-    "echarts": "^6.1.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-redux": "^9.3.0",
-    "react-router-dom": "^7.18.2"
+    "dev": "pnpm --filter @workspace/web dev",
+    "build": "pnpm --filter @workspace/web build",
+    "preview": "pnpm --filter @workspace/web preview",
+    "storybook": "pnpm --filter @workspace/storybook storybook",
+    "build-storybook": "pnpm --filter @workspace/storybook build-storybook",
+    "lint": "oxlint"
   },
   "devDependencies": {
-    "@types/node": "^24.13.2",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.3",
-    "msw": "^2.15.0",
     "oxlint": "^1.71.0",
-    "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "typescript": "~6.0.2"
   }
 }
