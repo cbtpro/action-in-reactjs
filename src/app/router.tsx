@@ -3,6 +3,7 @@ import Layout from '@/components/Layout'
 import HomePage from '@/pages/HomePage'
 import AboutPage from '@/pages/AboutPage'
 import ChartsPage from '@/pages/ChartsPage'
+import FormPage from '@/pages/form'
 import NotFoundPage from '@/pages/NotFoundPage'
 import DemoPage from '@/pages/demo/Index'
 
@@ -18,6 +19,7 @@ export const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: 'demo', element: <DemoPage /> },
       { path: 'charts', element: <ChartsPage /> },
+      { path: 'form', element: <FormPage /> },
       { path: 'about', element: <AboutPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

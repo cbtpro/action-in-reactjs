@@ -18,6 +18,9 @@ export default function Layout() {
           <NavLink to="/charts" className="nav__link">
             图表
           </NavLink>
+          <NavLink to="/form" className="nav__link">
+            表单
+          </NavLink>
           <NavLink to="/about" className="nav__link">
             关于
           </NavLink>
