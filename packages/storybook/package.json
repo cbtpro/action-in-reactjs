@@ -9,10 +9,12 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
+    "@reduxjs/toolkit": "^2.12.0",
     "@workspace/ui": "workspace:*",
     "antd": "^6.6.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "react-redux": "^9.3.0"
   },
   "devDependencies": {
     "@storybook/addon-essentials": "^8.6.14",

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Layout as AntdLayout, Menu, Button, Tooltip } from 'antd'
@@ -9,12 +9,13 @@ import {
   BarChartOutlined,
   TableOutlined,
   InfoCircleOutlined,
+  SettingOutlined,
   SunOutlined,
   MoonOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from '@ant-design/icons'
-import { useTheme } from '@/contexts/ThemeContext'
+import { useSettings } from '@/contexts/SettingsContext'
 import TabBar from '@/components/TabBar'
 import Breadcrumb from '@/components/Breadcrumb'
 
@@ -23,15 +24,28 @@ const { Header, Sider, Content, Footer } = AntdLayout
 /**
  * 左侧菜单配置
  *
- * 开闭原则:新增路由只需在此追加一项,
+ * 支持二级菜单:给某项追加 children 即自动渲染为 SubMenu。
+ * 父项 key 用标识名(如 'demo'),子项 key 用实际路由路径,
+ * 这样 onClick 的 key 直接就是可导航路径。
+ *
+ * 开闭原则:新增路由只需在此追加一项(或给已有项追加 children),
  * Menu 自动渲染、TabBar 自动匹配标签,无需修改组件逻辑。
  */
 const MENU_ITEMS: MenuProps['items'] = [
   { key: '/', icon: <HomeOutlined />, label: '首页' },
-  { key: '/demo', icon: <CodeOutlined />, label: '演示' },
+  {
+    key: 'demo',
+    icon: <CodeOutlined />,
+    label: '演示',
+    children: [
+      { key: '/demo', label: '演示首页' },
+      { key: '/demo/permission', label: '权限演示' },
+    ],
+  },
   { key: '/charts', icon: <BarChartOutlined />, label: '图表' },
   { key: '/list', icon: <TableOutlined />, label: '列表' },
   { key: '/about', icon: <InfoCircleOutlined />, label: '关于' },
+  { key: '/settings', icon: <SettingOutlined />, label: '设置' },
 ]
 
 /**
@@ -39,10 +53,24 @@ const MENU_ITEMS: MenuProps['items'] = [
  *
  * /form 不在菜单中,但从 /list 跳入,因此高亮 /list,
  * 给用户"仍然在列表相关功能中"的空间感。
+ *
+ * 二级路由的子项 key 本身就是路径(如 '/demo/permission'),
+ * 所以直接返回 pathname 即可高亮对应子项。
  */
 function getMenuSelectedKey(pathname: string): string[] {
   if (pathname.startsWith('/form')) return ['/list']
   return [pathname]
+}
+
+/**
+ * 路由 → 需要自动展开的父菜单 key 列表
+ *
+ * 进入 /demo/** 时自动展开 'demo' SubMenu,
+ * 让用户一眼看到当前所在的二级菜单。
+ */
+function getMenuOpenKeys(pathname: string): string[] {
+  if (pathname.startsWith('/demo')) return ['demo']
+  return []
 }
 
 /**
@@ -71,12 +99,31 @@ export type OutletContext = {
  * React 哲学:组合 —— 各区域职责单一、可独立扩展。
  */
 export default function Layout() {
-  const { isDark, toggleTheme } = useTheme()
+  const { theme, toggleTheme } = useSettings()
+  const isDark = theme === 'dark'
   const location = useLocation()
   const navigate = useNavigate()
 
   const [collapsed, setCollapsed] = useState(false)
   const [actions, setActions] = useState<ReactNode>(null)
+  const [openKeys, setOpenKeys] = useState<string[]>(() =>
+    getMenuOpenKeys(location.pathname),
+  )
+
+  /*
+   * 路由变化时自动展开当前路由所属的父菜单。
+   * 只追加不移除 —— 用户手动展开/折叠其他菜单的操作不被覆盖。
+   */
+  useEffect(() => {
+    const expected = getMenuOpenKeys(location.pathname)
+    if (expected.length) {
+      setOpenKeys((prev) => {
+        const merged = new Set(prev)
+        expected.forEach((k) => merged.add(k))
+        return [...merged]
+      })
+    }
+  }, [location.pathname])
 
   return (
     <AntdLayout className="app-layout" hasSider>
@@ -98,6 +145,8 @@ export default function Layout() {
           theme={isDark ? 'dark' : 'light'}
           items={MENU_ITEMS}
           selectedKeys={getMenuSelectedKey(location.pathname)}
+          openKeys={openKeys}
+          onOpenChange={(keys) => setOpenKeys(keys as string[])}
           onClick={({ key }) => navigate(key)}
         />
       </Sider>

@@ -5,8 +5,10 @@ import AboutPage from '@/pages/AboutPage'
 import ChartsPage from '@/pages/ChartsPage'
 import FormPage from '@/pages/form'
 import ListPage from '@/pages/list/Index'
+import SettingsPage from '@/pages/settings/Index'
 import NotFoundPage from '@/pages/NotFoundPage'
 import DemoPage from '@/pages/demo/Index'
+import PermissionDemoPage from '@/pages/demo/PermissionDemo'
 
 /**
  * 面包屑单个项 —— 支持标题和可选的跳转路径
@@ -52,8 +54,15 @@ export const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       {
         path: 'demo',
-        element: <DemoPage />,
         handle: { breadcrumb: '演示' } satisfies RouteHandle,
+        children: [
+          { index: true, element: <DemoPage /> },
+          {
+            path: 'permission',
+            element: <PermissionDemoPage />,
+            handle: { breadcrumb: '权限演示' } satisfies RouteHandle,
+          },
+        ],
       },
       {
         path: 'charts',
@@ -87,6 +96,11 @@ export const router = createBrowserRouter([
         path: 'about',
         element: <AboutPage />,
         handle: { breadcrumb: '关于' } satisfies RouteHandle,
+      },
+      {
+        path: 'settings',
+        element: <SettingsPage />,
+        handle: { breadcrumb: '设置' } satisfies RouteHandle,
       },
       { path: '*', element: <NotFoundPage /> },
     ],

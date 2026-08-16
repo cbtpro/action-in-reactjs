@@ -29,6 +29,7 @@ import { useNavigate, useSearchParams, useOutletContext } from 'react-router-dom
 import dayjs from 'dayjs'
 import DynamicListItem from './DynamicListItem'
 import { MentorSelectField } from '@workspace/ui'
+import StickyActions from '@/components/StickyActions'
 import type { FormData } from './types'
 import { getFormRecord, type FormRecord } from '@/services/formRecord'
 import type { OutletContext } from '@/components/Layout'
@@ -454,59 +455,71 @@ export default function FormPage() {
               <Checkbox>我已阅读并同意 <a href="#">用户协议</a> 和 <a href="#">隐私政策</a></Checkbox>
             </Form.Item>
 
-            {/* ---- 操作按钮区:详情模式按钮已移至面包屑栏 ---- */}
+            {/*
+             * ---- 操作按钮区:详情模式按钮已移至面包屑栏 ----
+             *
+             * 使用 StickyActions 公共组件接管底部按钮的三态布局:
+             * - 首屏(用户未滚动):隐藏,不占首屏空间
+             * - 滚动中(底部锚点不在视口):position:fixed 吸底,带毛玻璃悬浮条
+             * - 滚到底部(锚点进入视口):恢复为 Card 内普通静态排布
+             *
+             * scrollContainer 显式指定为 .app-content__body(Layout 里的滚动容器),
+             * 避免组件向上查找时误判到 window,导致锚点可见性判断偏移。
+             */}
             {pageMode !== 'detail' && (
-            <div className="form-actions">
-              <div className="form-actions__inner">
-                {pageMode === 'edit' ? (
-                  <Space size="middle">
-                    <Button
-                      type="primary"
-                      htmlType="submit"
-                      size="large"
-                      loading={submitting}
-                    >
-                      保存修改
-                    </Button>
-                    <Button size="large" onClick={handleReset}>
-                      重置为初始值
-                    </Button>
-                  </Space>
-                ) : (
-                  <Space size="middle">
-                    <Button
-                      type="primary"
-                      htmlType="submit"
-                      size="large"
-                      loading={submitting}
-                    >
-                      提交创建
-                    </Button>
-                    <Button size="large" onClick={handleReset}>
-                      重置
-                    </Button>
-                    <Button
-                      size="large"
-                      type="default"
-                      onClick={() => {
-                        form.setFieldsValue({
-                          username: 'demo_user',
-                          email: 'demo@example.com',
-                          password: 'Demo1234',
-                          phone: '13800138000',
-                          gender: 'male',
-                          role: 'personal',
-                          agree: true,
-                        })
-                        message.success('已填入示例数据')
-                      }}
-                    >
-                      填入示例数据
-                    </Button>
-                  </Space>
-                )}
-              </div>
-            </div>
+              <StickyActions scrollContainer=".app-content__body">
+                <div className="form-actions">
+                  <div className="form-actions__inner">
+                    {pageMode === 'edit' ? (
+                      <Space size="middle">
+                        <Button
+                          type="primary"
+                          htmlType="submit"
+                          size="large"
+                          loading={submitting}
+                        >
+                          保存修改
+                        </Button>
+                        <Button size="large" onClick={handleReset}>
+                          重置为初始值
+                        </Button>
+                      </Space>
+                    ) : (
+                      <Space size="middle">
+                        <Button
+                          type="primary"
+                          htmlType="submit"
+                          size="large"
+                          loading={submitting}
+                        >
+                          提交创建
+                        </Button>
+                        <Button size="large" onClick={handleReset}>
+                          重置
+                        </Button>
+                        <Button
+                          size="large"
+                          type="default"
+                          onClick={() => {
+                            form.setFieldsValue({
+                              username: 'demo_user',
+                              email: 'demo@example.com',
+                              password: 'Demo1234',
+                              phone: '13800138000',
+                              gender: 'male',
+                              role: 'personal',
+                              agree: true,
+                            })
+                            message.success('已填入示例数据')
+                          }}
+                        >
+                          填入示例数据
+                        </Button>
+                      </Space>
+                    )}
+                  </div>
+                </div>
+              </StickyActions>
             )}
           </Form>
         </Spin>

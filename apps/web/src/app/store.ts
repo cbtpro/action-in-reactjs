@@ -1,5 +1,6 @@
 import { configureStore } from '@reduxjs/toolkit'
 import counterReducer from '@/store/slices/counterSlice'
+import userReducer from '@/store/slices/userSlice'
 
 /**
  * 应用级 Redux store
@@ -8,6 +9,7 @@ import counterReducer from '@/store/slices/counterSlice'
 export const store = configureStore({
   reducer: {
     counter: counterReducer,
+    user: userReducer,
   },
 })
 

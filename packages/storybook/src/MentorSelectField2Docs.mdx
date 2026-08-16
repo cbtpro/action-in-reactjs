@@ -12,7 +12,7 @@ import { Meta } from '@storybook/blocks'
 
 ### v1：隐藏 Input（MentorSelectField）
 
-```
+```text
 Form.Item (无 name, label + 按钮)        ← 外层只负责外观
 ├── Table (展示已选导师)                   ← 只读视图
 └── Form.Item (name, noStyle)             ← 内层负责字段绑定
@@ -26,7 +26,7 @@ Form.Item (无 name, label + 按钮)        ← 外层只负责外观
 
 ### v2：受控组件（MentorSelectField2）
 
-```
+```text
 Form.Item (name, label + 按钮, rules)     ← 单层，同时负责外观和字段绑定
 └── MentorFieldControl                    ← 受控子组件
     ├── Table (展示已选导师)
@@ -44,12 +44,32 @@ Form.Item (name, label + 按钮, rules)     ← 单层，同时负责外观和�
 
 当 `Form.Item` 携带 `name` 属性时，会对**唯一子元素**执行 `React.cloneElement`，注入以下属性：
 
-| 注入属性 | 作用 |
-|---|---|
-| `value` | 当前字段值，随表单状态自动更新 |
-| `onChange` | 值变更回调，调用后 antd 自动更新字段值并触发校验 |
-| `id` | 字段唯一标识 |
-| `onBlur` | 失焦回调（默认 validateTrigger 之一） |
+<table>
+  <thead>
+    <tr>
+      <th>注入属性</th>
+      <th>作用</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>value</code></td>
+      <td>当前字段值，随表单状态自动更新</td>
+    </tr>
+    <tr>
+      <td><code>onChange</code></td>
+      <td>值变更回调，调用后 antd 自动更新字段值并触发校验</td>
+    </tr>
+    <tr>
+      <td><code>id</code></td>
+      <td>字段唯一标识</td>
+    </tr>
+    <tr>
+      <td><code>onBlur</code></td>
+      <td>失焦回调（默认 validateTrigger 之一）</td>
+    </tr>
+  </tbody>
+</table>
 
 这与 antd 内置的 `Select`、`DatePicker`、`Switch` 的机制完全一致——子组件只需声明 `value` 和 `onChange` 即可成为受控表单控件。
 
@@ -99,21 +119,81 @@ console.log(values.mentorId)  // "U00003"
 
 ## 支持的 Props
 
-| 属性 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `name` | `string` | — | Form 字段名，存储导师主键 id（必填） |
-| `label` | `ReactNode` | `'导师'` | 表单项标签 |
-| `required` | `boolean` | `true` | 是否必填 |
-| `rules` | `Rule[]` | — | 自定义校验规则，不传则按 required 自动生成 |
-| `modalTitle` | `string` | `'选择导师'` | 弹窗标题 |
+<table>
+  <thead>
+    <tr>
+      <th>属性</th>
+      <th>类型</th>
+      <th>默认值</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>name</code></td>
+      <td><code>string</code></td>
+      <td>—</td>
+      <td>Form 字段名，存储导师主键 id（必填）</td>
+    </tr>
+    <tr>
+      <td><code>label</code></td>
+      <td><code>ReactNode</code></td>
+      <td><code>'导师'</code></td>
+      <td>表单项标签</td>
+    </tr>
+    <tr>
+      <td><code>required</code></td>
+      <td><code>boolean</code></td>
+      <td><code>true</code></td>
+      <td>是否必填</td>
+    </tr>
+    <tr>
+      <td><code>rules</code></td>
+      <td><code>Rule[]</code></td>
+      <td>—</td>
+      <td>自定义校验规则，不传则按 required 自动生成</td>
+    </tr>
+    <tr>
+      <td><code>modalTitle</code></td>
+      <td><code>string</code></td>
+      <td><code>'选择导师'</code></td>
+      <td>弹窗标题</td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 
 ## 何时选择哪个版本
 
-| 场景 | 推荐 | 原因 |
-|---|---|---|
-| 追求 antd 原生范式、最少代码 | v2 | 受控组件是 antd 的标准模式，无需隐藏 Input 和 Form.useWatch |
-| 展示层与字段绑定需要完全解耦 | v1 | 外层 Form.Item 可自由组合任意展示组件，字段绑定由内层独立完成 |
-| 需要将已有展示组件快速接入表单 | v2 | 只需给现有组件加 `value`/`onChange` 即可 |
-| 技术分享/教学 | 两者并列 | 完整展示 antd Form 的两种字段绑定范式 |
+<table>
+  <thead>
+    <tr>
+      <th>场景</th>
+      <th>推荐</th>
+      <th>原因</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>追求 antd 原生范式、最少代码</td>
+      <td>v2</td>
+      <td>受控组件是 antd 的标准模式，无需隐藏 Input 和 Form.useWatch</td>
+    </tr>
+    <tr>
+      <td>展示层与字段绑定需要完全解耦</td>
+      <td>v1</td>
+      <td>外层 Form.Item 可自由组合任意展示组件，字段绑定由内层独立完成</td>
+    </tr>
+    <tr>
+      <td>需要将已有展示组件快速接入表单</td>
+      <td>v2</td>
+      <td>只需给现有组件加 <code>value</code>/<code>onChange</code> 即可</td>
+    </tr>
+    <tr>
+      <td>技术分享/教学</td>
+      <td>两者并列</td>
+      <td>完整展示 antd Form 的两种字段绑定范式</td>
+    </tr>
+  </tbody>
+</table>
