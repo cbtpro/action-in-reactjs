@@ -25,12 +25,13 @@ import {
   PlusOutlined,
   StopOutlined,
 } from '@ant-design/icons'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useOutletContext } from 'react-router-dom'
 import dayjs from 'dayjs'
 import DynamicListItem from './DynamicListItem'
 import { MentorSelectField } from '@workspace/ui'
 import type { FormData } from './types'
 import { getFormRecord, type FormRecord } from '@/services/formRecord'
+import type { OutletContext } from '@/components/Layout'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -77,6 +78,7 @@ export default function FormPage() {
 
   const roleValue = Form.useWatch('role', form)
   const { message } = App.useApp()
+  const { setActions } = useOutletContext<OutletContext>()
 
   /*
    * 页模式推导:纯派生状态,不另存 state —— 单一真源(editable + recordId)决定一切。
@@ -208,6 +210,39 @@ export default function FormPage() {
   }
 
   /*
+   * 面包屑栏右侧操作按钮 —— 通过 Outlet context 注册到 Layout
+   *
+   * - 详情 → [返回列表] [编辑]
+   * - 编辑 → [返回列表] [取消编辑]  (同一按钮位置切换,不消失)
+   * - 新建 → [返回列表]
+   *
+   * React 哲学:副作用隔离 —— 页面挂载时注册,卸载时清理,
+   * 避免按钮残留在其他页面的面包屑栏。
+   */
+  useEffect(() => {
+    setActions(
+      <Space>
+        <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>返回列表</Button>
+        {pageMode === 'detail' ? (
+          <Tooltip title="允许修改表单字段">
+            <Button type="primary" icon={<EditOutlined />} onClick={handleEnableEdit}>
+              编辑
+            </Button>
+          </Tooltip>
+        ) : pageMode === 'edit' ? (
+          <Tooltip title="放弃当前修改并返回详情">
+            <Button danger icon={<StopOutlined />} onClick={handleCancelEdit}>
+              取消编辑
+            </Button>
+          </Tooltip>
+        ) : null}
+      </Space>,
+    )
+    return () => setActions(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageMode])
+
+  /*
    * 模式对应的 Tag 颜色与文案(用于标题右侧小角标)
    */
   const modeTag =
@@ -221,31 +256,17 @@ export default function FormPage() {
 
   return (
     <section className="page">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 12, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', columnGap: 12, flexWrap: 'wrap' }}>
-          <Title level={2} style={{ marginBottom: 0 }}>
-            {pageMode === 'create' ? '新建表单' : '表单详情'}
-          </Title>
-          {modeTag}
-          {recordMeta?.status && <Tag color="blue">状态: {recordMeta.status}</Tag>}
-          {recordMeta?.createdAt && <Text type="secondary">创建于 {recordMeta.createdAt}</Text>}
-        </div>
-        <Space>
-          <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>
-            返回列表
-          </Button>
-          {pageMode === 'detail' && (
-            <Tooltip title="允许修改表单字段">
-              <Button type="primary" icon={<EditOutlined />} onClick={handleEnableEdit}>
-                编辑
-              </Button>
-            </Tooltip>
-          )}
-        </Space>
+      <div style={{ display: 'flex', alignItems: 'baseline', columnGap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+        <Title level={2} style={{ marginBottom: 0 }}>
+          {pageMode === 'create' ? '新建表单' : '表单详情'}
+        </Title>
+        {modeTag}
+        {recordMeta?.status && <Tag color="blue">状态: {recordMeta.status}</Tag>}
+        {recordMeta?.createdAt && <Text type="secondary">创建于 {recordMeta.createdAt}</Text>}
       </div>
       <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>
         {pageMode === 'detail'
-          ? '当前为只读模式,点击右上角「编辑」可切换为可编辑模式。'
+          ? '当前为只读模式,点击面包屑栏右侧的「编辑」可切换为可编辑模式。'
           : pageMode === 'edit'
             ? '正在编辑,完成后点击「保存」,或点击「取消」放弃修改并返回详情。'
             : '正在创建新记录,填写完成后点击「提交」。'}
@@ -433,51 +454,60 @@ export default function FormPage() {
               <Checkbox>我已阅读并同意 <a href="#">用户协议</a> 和 <a href="#">隐私政策</a></Checkbox>
             </Form.Item>
 
-            {/* ---- 操作按钮区:根据 pageMode 渲染不同组合 ---- */}
-            <Form.Item>
-              {pageMode === 'detail' ? (
-                <Space>
-                  <Button type="primary" icon={<EditOutlined />} onClick={handleEnableEdit}>
-                    编辑
-                  </Button>
-                  <Button onClick={handleBack}>返回列表</Button>
-                </Space>
-              ) : pageMode === 'edit' ? (
-                <Space>
-                  <Button type="primary" htmlType="submit" loading={submitting}>
-                    保存
-                  </Button>
-                  <Button onClick={handleReset}>重置</Button>
-                  <Button icon={<StopOutlined />} onClick={handleCancelEdit}>
-                    取消编辑
-                  </Button>
-                </Space>
-              ) : (
-                <Space>
-                  <Button type="primary" htmlType="submit" loading={submitting}>
-                    提交
-                  </Button>
-                  <Button onClick={handleReset}>重置</Button>
-                  <Button
-                    type="link"
-                    onClick={() => {
-                      form.setFieldsValue({
-                        username: 'demo_user',
-                        email: 'demo@example.com',
-                        password: 'Demo1234',
-                        phone: '13800138000',
-                        gender: 'male',
-                        role: 'personal',
-                        agree: true,
-                      })
-                      message.success('已填入示例数据')
-                    }}
-                  >
-                    填入示例数据
-                  </Button>
-                </Space>
-              )}
-            </Form.Item>
+            {/* ---- 操作按钮区:详情模式按钮已移至面包屑栏 ---- */}
+            {pageMode !== 'detail' && (
+            <div className="form-actions">
+              <div className="form-actions__inner">
+                {pageMode === 'edit' ? (
+                  <Space size="middle">
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      size="large"
+                      loading={submitting}
+                    >
+                      保存修改
+                    </Button>
+                    <Button size="large" onClick={handleReset}>
+                      重置为初始值
+                    </Button>
+                  </Space>
+                ) : (
+                  <Space size="middle">
+                    <Button
+                      type="primary"
+                      htmlType="submit"
+                      size="large"
+                      loading={submitting}
+                    >
+                      提交创建
+                    </Button>
+                    <Button size="large" onClick={handleReset}>
+                      重置
+                    </Button>
+                    <Button
+                      size="large"
+                      type="default"
+                      onClick={() => {
+                        form.setFieldsValue({
+                          username: 'demo_user',
+                          email: 'demo@example.com',
+                          password: 'Demo1234',
+                          phone: '13800138000',
+                          gender: 'male',
+                          role: 'personal',
+                          agree: true,
+                        })
+                        message.success('已填入示例数据')
+                      }}
+                    >
+                      填入示例数据
+                    </Button>
+                  </Space>
+                )}
+              </div>
+            </div>
+            )}
           </Form>
         </Spin>
       </Card>
