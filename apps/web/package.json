@@ -13,6 +13,7 @@
     "@reduxjs/toolkit": "^2.12.0",
     "@workspace/ui": "workspace:*",
     "antd": "^6.6.0",
+    "dayjs": "^1.11.21",
     "echarts": "^6.1.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -26,5 +27,10 @@
     "@vitejs/plugin-react": "^6.0.3",
     "msw": "^2.15.0",
     "vite": "^8.1.1"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

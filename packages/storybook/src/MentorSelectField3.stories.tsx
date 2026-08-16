@@ -1,28 +1,31 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { useState } from 'react'
 import { Button, Form, Space, Typography } from 'antd'
-import { MentorSelectField } from '@workspace/ui'
+import { MentorSelectField3 } from '@workspace/ui'
 
 const { Text } = Typography
 
-const meta: Meta<typeof MentorSelectField> = {
-  title: 'Mentor/MentorSelectField',
-  component: MentorSelectField,
+const meta: Meta<typeof MentorSelectField3> = {
+  title: 'Mentor/MentorSelectField3 (纯手动桥接版)',
+  component: MentorSelectField3,
   parameters: {
     layout: 'padded',
     docs: {
       description: {
         component: [
-          '导师选择表单项组件，集成了弹窗、展示表和 Form 字段绑定。',
+          '**v3 - 纯手动桥接版**（`Form.useFormInstance` + `form.setFieldValue`）。',
           '',
-          '**复用方式**（任何 antd Form 中直接嵌入即可）：',
-          '```tsx',
-          '<Form form={form}>',
-          '  <MentorSelectField name="mentorId" label="指导导师" />',
-          '</Form>',
-          '```',
+          '核心机制：',
+          '- **读值**：`Form.useWatch(name, form)` 订阅字段最新值（响应 `setFieldsValue` / `resetFields`）',
+          '- **写值**：`form.setFieldValue(name, value)` 直接写入 Form 实例',
+          '- **校验**：独立的 `noStyle Form.Item(name + rules)` 仅把 name/rules 挂到校验树，不参与渲染',
           '',
-          '选中后 `form.getFieldsValue().mentorId` 即为所选导师主键。',
+          '对比 v1 / v2：',
+          '- ✅ **无隐藏 DOM hack**（没有 `display:none` Input）',
+          '- ✅ **不依赖受控协议**（子组件 props 无需 value/onChange 约定）',
+          '- ❌ 必须在 Form 上下文内（需要 `useFormInstance`）',
+          '',
+          '适用场景：不接受任何"隐藏控件"痕迹的洁癖代码，或展示层结构复杂不适合作为标准受控控件。',
         ].join('\n'),
       },
     },
@@ -31,7 +34,7 @@ const meta: Meta<typeof MentorSelectField> = {
 }
 export default meta
 
-type Story = StoryObj<typeof MentorSelectField>
+type Story = StoryObj<typeof MentorSelectField3>
 
 /**
  * 基础用法：必填校验 + 提交时获取 mentorId。
@@ -48,7 +51,7 @@ function DefaultStory() {
         onFinish={(values) => setSubmitted(values.mentorId ?? '(空)')}
         style={{ maxWidth: 800 }}
       >
-        <MentorSelectField name="mentorId" label="指导导师" />
+        <MentorSelectField3 name="mentorId" label="指导导师" />
         <Form.Item>
           <Button type="primary" htmlType="submit">
             提交
@@ -75,43 +78,8 @@ export const Default: Story = {
 }
 
 /**
- * 非必填：通过 required={false} 关闭校验。
- */
-function OptionalStory() {
-  const [form] = Form.useForm<{ mentorId?: string }>()
-  const [submitted, setSubmitted] = useState<string | null>(null)
-
-  return (
-    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={(values) => setSubmitted(values.mentorId ?? '(空)')}
-        style={{ maxWidth: 800 }}
-      >
-        <MentorSelectField name="mentorId" label="指导导师(选填)" required={false} />
-        <Form.Item>
-          <Button type="primary" htmlType="submit">
-            提交
-          </Button>
-        </Form.Item>
-      </Form>
-      {submitted !== null && (
-        <Text type="secondary">
-          提交结果 mentorId = <strong>{submitted}</strong>
-        </Text>
-      )}
-    </Space>
-  )
-}
-
-export const Optional: Story = {
-  render: () => <OptionalStory />,
-}
-
-/**
  * 预填值：通过 initialValues 设置初始 mentorId，
- * 组件自动查询详情并回填展示表。
+ * 组件自动查询详情并回填展示表；打开弹窗时自动回显选中态。
  */
 function PrefilledStory() {
   const [form] = Form.useForm<{ mentorId?: string }>()
@@ -123,7 +91,7 @@ function PrefilledStory() {
       initialValues={{ mentorId: 'U00003' }}
       style={{ maxWidth: 800 }}
     >
-      <MentorSelectField name="mentorId" label="指导导师(预填)" />
+      <MentorSelectField3 name="mentorId" label="指导导师(预填)" />
       <Form.Item>
         <Button onClick={() => form.setFieldsValue({ mentorId: 'U00010' })}>
           切换为 U00010
@@ -159,7 +127,7 @@ function ClickRowToSelectStory() {
         onFinish={(values) => setSubmitted(values.mentorId ?? '(空)')}
         style={{ maxWidth: 800 }}
       >
-        <MentorSelectField
+        <MentorSelectField3
           name="mentorId"
           label="指导导师(点击行选中)"
           clickRowToSelect
@@ -167,12 +135,6 @@ function ClickRowToSelectStory() {
         <Form.Item>
           <Button type="primary" htmlType="submit">
             提交
-          </Button>
-          <Button
-            style={{ marginLeft: 8 }}
-            onClick={() => form.resetFields()}
-          >
-            重置
           </Button>
         </Form.Item>
       </Form>

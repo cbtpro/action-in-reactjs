@@ -1,57 +1,37 @@
 import { useEffect, useState } from 'react'
-import { Button, Flex, Form, Input, Table, Tooltip, App } from 'antd'
+import { Button, Flex, Form, Table, Tooltip, App } from 'antd'
 import type { ColumnsType } from 'antd/es/table/interface'
 import type { Rule } from 'antd/es/form'
 import { CloseOutlined, UserOutlined } from '@ant-design/icons'
 import MentorSelectModal, { type MentorSelectMode } from './MentorSelectModal'
 import { getMentorDetail, type MentorUser } from './services/mentor'
 
-export interface MentorSelectFieldProps {
-  /** Form 字段名,存储导师主键 id */
+export interface MentorSelectField3Props {
   name: string
-  /** 表单项标签,默认"导师" */
   label?: React.ReactNode
-  /** 是否必填,默认 true */
   required?: boolean
-  /** 自定义校验规则,不传则按 required + mode 自动生成 */
   rules?: Rule[]
-  /** 弹窗标题 */
   modalTitle?: string
-  /** 是否开启点击行任意位置即选中导师,默认 true */
   clickRowToSelect?: boolean
-  /** 选择模式:single 单选(默认) / multiple 多选 */
   mode?: MentorSelectMode
-  /** 是否禁用(详情模式下=true,禁止添加/移除导师) */
-  disabled?: boolean
 }
 
-/*
- * 辅助:把表单字段值统一转换成 id 数组。
- * single 模式下字段值是 string | undefined,multiple 是 string[] | undefined。
- */
-function toIdList(
-  raw: string | string[] | undefined,
-  mode: MentorSelectMode,
-): string[] {
+function toIdList(raw: string | string[] | undefined, mode: MentorSelectMode): string[] {
   if (!raw) return []
   if (mode === 'multiple') return Array.isArray(raw) ? raw.filter(Boolean) : []
   return typeof raw === 'string' ? [raw] : []
 }
 
-/**
- * MentorSelectField - 复用的导师选择表单项
- *
- * 设计遵循:
- * - 开闭原则:内部实现独立演进,使用方只管嵌入,不关心弹窗/详情/回填
- * - 单一职责:本组件只做"字段绑定 + 展示 + 选择 + 回填"的串联
- * - 分离关注:展示层(Table)、交互层(Modal)、数据层(services)解耦
- *
- * 使用方式(任何 antd Form 中直接嵌入即可):
- *   <Form form={form}>
- *     <MentorSelectField name="mentorId" label="指导导师" mode="multiple" />
- *   </Form>
- */
-export default function MentorSelectField({
+function normalizeForModal(
+  raw: string | string[] | undefined,
+  mode: MentorSelectMode,
+): string | string[] | null {
+  if (!raw) return null
+  if (mode === 'multiple') return Array.isArray(raw) && raw.length > 0 ? raw.filter(Boolean) : null
+  return typeof raw === 'string' ? raw : null
+}
+
+export default function MentorSelectField3({
   name,
   label = '导师',
   required = true,
@@ -59,24 +39,15 @@ export default function MentorSelectField({
   modalTitle = '选择导师',
   clickRowToSelect,
   mode = 'single',
-  disabled = false,
-}: MentorSelectFieldProps) {
+}: MentorSelectField3Props) {
   const [modalOpen, setModalOpen] = useState(false)
   const [details, setDetails] = useState<MentorUser[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
 
   const { message } = App.useApp()
-
   const form = Form.useFormInstance()
   const rawValue = Form.useWatch<string | string[] | undefined>(name, form)
 
-  /*
-   * React 哲学:依赖驱动渲染 / 副作用隔离
-   *
-   * 字段值变化 → 拉取详情:
-   * - id 列表用 Promise.all 并发拉取(1 个或多个都 OK)
-   * - 空 id → 清空展示区
-   */
   useEffect(() => {
     const ids = toIdList(rawValue, mode)
     if (ids.length === 0) {
@@ -101,11 +72,6 @@ export default function MentorSelectField({
     }
   }, [mode, rawValue, message])
 
-  /**
-   * Modal 确定回调:
-   * - single: user 是单个对象,查一次详情
-   * - multiple: user 是数组,Promise.all 并行查详情
-   */
   const handleConfirm = async (user: MentorUser | MentorUser[]) => {
     try {
       setDetailLoading(true)
@@ -129,9 +95,7 @@ export default function MentorSelectField({
     }
   }
 
-  /** single: 全部移除; multiple: 只移除指定 id。禁用时不允许任何移除操作 */
   const handleRemove = (id?: string) => {
-    if (disabled) return
     if (mode === 'single' || id === undefined) {
       form.setFieldValue(name, mode === 'multiple' ? [] : undefined)
       setDetails([])
@@ -142,29 +106,16 @@ export default function MentorSelectField({
     setDetails(remain)
     const ids = toIdList(form.getFieldValue(name), mode).filter((x) => x !== id)
     form.setFieldValue(name, ids)
-    if (remain.length === 0) {
-      void form.validateFields([name]).catch(() => {})
-    }
+    if (remain.length === 0) void form.validateFields([name]).catch(() => {})
   }
 
-  /** 默认校验规则:按 mode 分支 */
   const mergedRules: Rule[] = rules ?? (
     required
       ? mode === 'multiple'
-        ? [
-            {
-              type: 'array',
-              required: true,
-              min: 1,
-              message: `请至少选择一位${typeof label === 'string' ? label : '导师'}`,
-            },
-          ]
+        ? [{ type: 'array', required: true, min: 1, message: `请至少选择一位${typeof label === 'string' ? label : '导师'}` }]
         : [{ required: true, message: `请选择${typeof label === 'string' ? label : '导师'}` }]
       : []
   )
-
-  // Modal 回填 value:模式对齐
-  const modalValue: string | string[] | null = normalizeModalValue(rawValue, mode)
 
   return (
     <>
@@ -176,35 +127,21 @@ export default function MentorSelectField({
               type="primary"
               size="small"
               icon={<UserOutlined />}
-              disabled={disabled}
-              onClick={() => {
-                if (disabled) return
-                setModalOpen(true)
-              }}
+              onClick={() => setModalOpen(true)}
             >
               添加导师
             </Button>
           </Flex>
         }
       >
-        <MentorDisplayTable
-          mode={mode}
-          data={details}
-          loading={detailLoading}
-          onRemove={handleRemove}
-          disabled={disabled}
-        />
-
-        <Form.Item name={name} noStyle rules={mergedRules}>
-          <Input style={{ display: 'none' }} />
-        </Form.Item>
+        <MentorDisplayTable mode={mode} data={details} loading={detailLoading} onRemove={handleRemove} />
       </Form.Item>
-
+      <Form.Item name={name} noStyle rules={mergedRules} />
       <MentorSelectModal
         mode={mode}
         open={modalOpen}
         title={modalTitle}
-        value={modalValue}
+        value={normalizeForModal(rawValue, mode)}
         clickRowToSelect={clickRowToSelect}
         onCancel={() => setModalOpen(false)}
         onConfirm={handleConfirm}
@@ -213,40 +150,14 @@ export default function MentorSelectField({
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  公共辅助                                                            */
-/* ------------------------------------------------------------------ */
-/**
- * 把表单值转换为 Modal 接受的 value(保证类型与 mode 对应)。
- * 纯函数,不是 Hook,命名不含 use 前缀(避免 react-hooks/rules-of-hooks 误报)。
- * 被 v1~v5 五个组件复用同一套决策逻辑。
- */
-function normalizeModalValue(
-  raw: string | string[] | undefined,
-  mode: MentorSelectMode,
-): string | string[] | null {
-  if (!raw) return null
-  if (mode === 'multiple') {
-    return Array.isArray(raw) && raw.length > 0 ? raw.filter(Boolean) : null
-  }
-  return typeof raw === 'string' ? raw : null
-}
-
-/* ------------------------------------------------------------------ */
-/*  内部子组件:已选导师展示表(支持单/多选移除)                          */
-/* ------------------------------------------------------------------ */
-
 interface MentorDisplayTableProps {
   mode: MentorSelectMode
   data: MentorUser[]
   loading: boolean
-  /** single:不传 id 视为移除全部;multiple:传 id 只移除该行 */
   onRemove: (id?: string) => void
-  /** 禁用整表交互(移除按钮) */
-  disabled?: boolean
 }
 
-function MentorDisplayTable({ mode, data, loading, onRemove, disabled }: MentorDisplayTableProps) {
+function MentorDisplayTable({ mode, data, loading, onRemove }: MentorDisplayTableProps) {
   const columns: ColumnsType<MentorUser> = [
     { title: '姓名', dataIndex: 'name', width: 100, ellipsis: { showTitle: false }, render: (v: string) => <Tooltip title={v}>{v}</Tooltip> },
     { title: '工号', dataIndex: 'employeeNo', width: 120 },
@@ -266,7 +177,6 @@ function MentorDisplayTable({ mode, data, loading, onRemove, disabled }: MentorD
           danger
           size="small"
           icon={<CloseOutlined />}
-          disabled={disabled}
           onClick={() => onRemove(mode === 'single' ? undefined : record.id)}
         >
           移除

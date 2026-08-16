@@ -148,3 +148,49 @@ function PrefilledStory() {
 export const Prefilled: Story = {
   render: () => <PrefilledStory />,
 }
+
+/**
+ * 点击行选中模式：传入 clickRowToSelect，
+ * 弹窗内单击导师行任意位置即可选中（默认仅点 radio 列）。
+ */
+function ClickRowToSelectStory() {
+  const [form] = Form.useForm<{ mentorId?: string }>()
+  const [submitted, setSubmitted] = useState<string | null>(null)
+
+  return (
+    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={(values) => setSubmitted(values.mentorId ?? '(空)')}
+        style={{ maxWidth: 800 }}
+      >
+        <MentorSelectField2
+          name="mentorId"
+          label="指导导师(点击行选中)"
+          clickRowToSelect
+        />
+        <Form.Item>
+          <Button type="primary" htmlType="submit">
+            提交
+          </Button>
+          <Button
+            style={{ marginLeft: 8 }}
+            onClick={() => form.resetFields()}
+          >
+            重置
+          </Button>
+        </Form.Item>
+      </Form>
+      {submitted && (
+        <Text type="secondary">
+          提交结果 mentorId = <strong>{submitted}</strong>
+        </Text>
+      )}
+    </Space>
+  )
+}
+
+export const ClickRowToSelect: Story = {
+  render: () => <ClickRowToSelectStory />,
+}

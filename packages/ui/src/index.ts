@@ -7,11 +7,17 @@
 
 // 组件
 export { default as MentorSelectModal } from './MentorSelectModal'
-export type { MentorSelectModalProps } from './MentorSelectModal'
+export type { MentorSelectModalProps, MentorSelectMode } from './MentorSelectModal'
 export { default as MentorSelectField } from './MentorSelectField'
 export type { MentorSelectFieldProps } from './MentorSelectField'
 export { default as MentorSelectField2 } from './MentorSelectField2'
 export type { MentorSelectField2Props } from './MentorSelectField2'
+export { default as MentorSelectField3 } from './MentorSelectField3'
+export type { MentorSelectField3Props } from './MentorSelectField3'
+export { default as MentorSelectField4 } from './MentorSelectField4'
+export type { MentorSelectField4Props } from './MentorSelectField4'
+export { default as MentorSelectField5 } from './MentorSelectField5'
+export type { MentorSelectField5Props } from './MentorSelectField5'
 
 // 数据服务
 export { searchMentors, getMentorDetail } from './services/mentor'

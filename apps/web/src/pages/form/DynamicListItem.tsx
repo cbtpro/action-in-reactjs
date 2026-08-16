@@ -1,4 +1,4 @@
-import { Form, Input, Row, Col } from 'antd'
+import { Form, Input, Row, Col, Tooltip } from 'antd'
 import { MinusCircleOutlined } from '@ant-design/icons'
 import type { FormListFieldData } from 'antd'
 
@@ -6,6 +6,8 @@ interface DynamicListItemProps {
   field: FormListFieldData
   onRemove?: () => void
   showRemove: boolean
+  /** 详情模式下禁用输入;Form.disabled 会自动禁用内置 Inputs,这里主要用于控制移除按钮交互样式 */
+  disabled?: boolean
 }
 
 /**
@@ -21,6 +23,7 @@ export default function DynamicListItem({
   field,
   onRemove,
   showRemove,
+  disabled,
 }: DynamicListItemProps) {
   return (
     <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
@@ -44,10 +47,18 @@ export default function DynamicListItem({
       </Col>
       <Col span={2}>
         {showRemove && (
-          <MinusCircleOutlined
-            style={{ color: '#ff4d4f', fontSize: 18, cursor: 'pointer' }}
-            onClick={onRemove}
-          />
+          disabled ? (
+            <Tooltip title="当前为详情模式,不可编辑">
+              <MinusCircleOutlined
+                style={{ color: '#bfbfbf', fontSize: 18, cursor: 'not-allowed' }}
+              />
+            </Tooltip>
+          ) : (
+            <MinusCircleOutlined
+              style={{ color: '#ff4d4f', fontSize: 18, cursor: 'pointer' }}
+              onClick={onRemove}
+            />
+          )
         )}
       </Col>
     </Row>
