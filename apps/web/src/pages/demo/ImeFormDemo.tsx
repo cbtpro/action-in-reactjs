@@ -15,7 +15,8 @@ import {
   Tag,
   Typography,
 } from 'antd'
-import { IMEInput2, IMENumberInput, IMESelect } from '@/components/ime'
+import { IMEInput } from '@/components/IMEInput'
+import { IMENumberInput } from '@/components/IMENumberInput'
 import { EyeOutlined } from '@ant-design/icons'
 
 const { Title, Text, Paragraph } = Typography
@@ -55,13 +56,16 @@ const DEPT_OPTIONS = [
  *  1. 整个 Form 的 validateTrigger = 'onChange'
  *     → 字段 onChange 触发 → 立即跑校验。
  *  2. 左侧列用"原生 antd 组件"(Input/InputNumber/Select),
- *     右侧列用"IME* 封装组件"(IMEInput2/IMENumberInput/IMESelect)。
+ *     右侧列用"IME* 封装组件"(IMEInput/IMENumberInput/普通 Select)。
  *  3. 用户用中文输入法输入时,左列会在按拼音过程中就开始提示校验错误
  *     (因为中间的拼音字符如 'zhan' 不符合 email 正则),
  *     而右列 IME* 组件只会在合成结束(选字完成)后才触发一次校验,
  *     视觉上更干净、体验更自然。
  *  4. 下方"即时预览"区域显示:字段触发了多少次 onChange,
  *     以及当前值,让用户能直观看到合成态的拦截效果。
+ *  注:2026-08 架构简化后,withComposition 仅对真实 <input>/<textarea>
+ *      生效(IMEInput/IMETextArea/IMENumberInput),Select 搜索输入框的
+ *      composition 走原生 antd,故此处「部门」项直接使用原生 Select。
  */
 export default function ImeFormDemoPage() {
   const [form] = Form.useForm<ImeDemoFormData>()
@@ -102,7 +106,7 @@ export default function ImeFormDemoPage() {
           IME 合成事件 + 变更即校验 演示
         </Title>
         <Text type="secondary">
-          使用 IMEInput / IMENumberInput / IMESelect 封装组件,
+          使用 IMEInput / IMENumberInput 封装组件,
           避免中文输入法拼音合成期间触发 antd Form 的 onChange 校验。
           左侧用原生 antd 组件做对照组,右侧用 IME 封装组件做实验组。
         </Text>
@@ -229,7 +233,7 @@ export default function ImeFormDemoPage() {
                 </Divider>
 
                 <Form.Item
-                  label="用户名 (IMEInput2)"
+                  label="用户名 (IMEInput)"
                   name="imeUsername"
                   extra="同样的校验规则,但中文输入时不会中途闪错"
                   rules={[
@@ -237,7 +241,7 @@ export default function ImeFormDemoPage() {
                     { min: 2, max: 12, message: '长度 2 到 12' },
                   ]}
                 >
-                  <IMEInput2
+                  <IMEInput
                     placeholder="用中文输入法:'中文用户名',合成期间完全不触发 onChange"
                     onChange={() => bump('imeUsername')}
                     allowClear
@@ -245,7 +249,7 @@ export default function ImeFormDemoPage() {
                 </Form.Item>
 
                 <Form.Item
-                  label="邮箱 (IMEInput2)"
+                  label="邮箱 (IMEInput)"
                   name="imeEmail"
                   extra="格式校验只在选字完成后触发"
                   rules={[
@@ -253,7 +257,7 @@ export default function ImeFormDemoPage() {
                     { type: 'email', message: '邮箱格式不正确' },
                   ]}
                 >
-                  <IMEInput2
+                  <IMEInput
                     placeholder="用中文输入法,邮箱规则在合成结束后才校验"
                     onChange={() => bump('imeEmail')}
                     allowClear
@@ -278,18 +282,18 @@ export default function ImeFormDemoPage() {
                 </Form.Item>
 
                 <Form.Item
-                  label="所属部门 (IMESelect)"
+                  label="所属部门 (原生 Select)"
                   name="imeDept"
-                  extra="showSearch:拼音合成期不触发 onSearch,选字完成后只搜一次"
+                  extra="withComposition 目前仅对 <input>/<textarea> 生效,此处使用 antd Select 做对照"
                   rules={[{ required: true, message: '请选择部门' }]}
                 >
-                  <IMESelect
+                  <Select
                     showSearch
-                    placeholder="输入 '产' 搜索 —— 合成期不触发 onSearch,最终 '产' 只搜一次"
+                    placeholder="中文拼音输入时,原生 Select 搜索框会逐字符触发 onSearch"
                     optionFilterProp="label"
                     options={deptOptions}
-                    onSearch={(kw) => {
-                      console.log('[IMESelect onSearch] 触发,关键词 =', kw)
+                    onSearch={(kw: string) => {
+                      console.log('[Select onSearch] 触发,关键词 =', kw)
                     }}
                   />
                 </Form.Item>

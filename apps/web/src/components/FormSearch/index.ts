@@ -1,22 +1,20 @@
 /**
- * FormSearch 模块公共导出(遵循"index.ts 做门面"惯例)。
+ * FormSearch 模块公共导出(门面 index)。
+ *
+ * 2026-08-22 重构:
+ *   之前版本内部自己实现了一套 IMEContext / useIME / IMEInput / IMETextArea。
+ *   现在使用用户重构的公共 IME* 组件(@/components/IMEInput 等):
+ *   - withComposition 在控件层自己做 onChange gating。
+ *   - 本目录**不再有 contexts / hooks / components 子目录**。
+ *   - IME 能力对业务层透明, 公共 API 直接就是 FormSearch + SearchItem。
  *
  * 公共 API:
- *   - FormSearch  : 搜索容器组件
- *   - SearchItem  : 声明式搜索条件配置
- *   - FormSearchProps / SearchItemProps / SearchItemType : 类型
- *   - FormSearchHandle : imperative handle
- *
- * 内部实现不对外暴露(符合 C1:业务层不需感知 IME 机制):
- *   - IMEContext     (contexts/IMEContext)
- *   - useIME         (hooks/useIME)
- *   - IMEInput       (components/IMEInput)
- *   - IMETextArea    (components/IMETextArea)
- *   - createIMEController (工厂函数)
- * 上述实现项仅在包内部 import,不通过此 index 导出。
- * 如果未来其他业务场景确实需要 IMEInput 等,再显式加入此处。
+ *   - FormSearch            容器 + Scheduler + debounce + 操作按钮栏
+ *   - SearchItem            声明式搜索条件(type → 控件分发:input/number/textarea/select/date/range)
+ *   - 类型 Props/Handle/Type 方便业务 TS 声明。
  */
 export { FormSearch } from './FormSearch'
 export type { FormSearchProps, FormSearchHandle } from './FormSearch'
+
 export { SearchItem } from './SearchItem'
 export type { SearchItemProps, SearchItemType } from './SearchItem'
