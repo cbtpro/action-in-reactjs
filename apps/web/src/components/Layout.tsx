@@ -40,6 +40,7 @@ const MENU_ITEMS: MenuProps['items'] = [
     children: [
       { key: '/demo', label: '演示首页' },
       { key: '/demo/permission', label: '权限演示' },
+      { key: '/demo/ime-form', label: 'IME 表单校验' },
     ],
   },
   { key: '/charts', icon: <BarChartOutlined />, label: '图表' },

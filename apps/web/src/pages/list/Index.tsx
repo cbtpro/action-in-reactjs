@@ -3,10 +3,7 @@ import {
   Button,
   Card,
   Form,
-  Input,
   Pagination,
-  Select,
-  Space,
   Table,
   Tag,
   Typography,
@@ -14,7 +11,9 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table/interface'
 import { Link, useNavigate } from 'react-router-dom'
-import { EyeOutlined, PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
+import { EyeOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { FormSearch, SearchItem } from '@/components/FormSearch'
+import type { FormSearchHandle } from '@/components/FormSearch'
 import { queryFormRecords, type FormRecord } from '@/services/formRecord'
 
 const { Title, Text } = Typography
@@ -59,6 +58,7 @@ const ROLE_LABEL_MAP: Record<string, string> = {
  */
 export default function ListPage() {
   const [queryForm] = Form.useForm<QueryForm>()
+  const formSearchRef = useRef<FormSearchHandle<QueryForm>>(null)
   const [data, setData] = useState<FormRecord[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -122,11 +122,6 @@ export default function ListPage() {
   }, [page, pageSize, queryForm, message])
 
   const handleSearch = () => {
-    setPage(1)
-  }
-
-  const handleReset = () => {
-    queryForm.resetFields()
     setPage(1)
   }
 
@@ -236,58 +231,23 @@ export default function ListPage() {
           },
         }}
       >
-        {/* 顶部搜索区(flex 0) */}
-        <Form<QueryForm>
+        {/* 顶部搜索区(flex 0) — 已替换为通用 FormSearch:
+            功能:输入即搜索 + debounce + IME composition 期间抑制中间请求 +
+            查询/重置按钮( force flush ) + 右侧 extra 新增按钮。
+            核心保证:
+              1) onChange 零包装 → antd Form value 正常写入
+              2) 拼音输入时,仅合成完成后触发一次 debounced 搜索,不出现 b→be→bei→北京 多次请求
+              3) 查询/重置 force flush,不受 debounce/IME 影响
+              4) 关键字段(keyword) IME 合成中,角色/状态 Select 变更正常触发搜索(精确字段级 Gating)
+         */}
+        <FormSearch<QueryForm>
+          ref={formSearchRef}
           form={queryForm}
-          layout="inline"
-          style={{ marginBottom: 0, rowGap: 8, flexShrink: 0 }}
-          onFinish={handleSearch}
-        >
-          <Form.Item name="keyword" label="关键字">
-            <Input
-              placeholder="编号/用户名/邮箱"
-              allowClear
-              style={{ minWidth: 220 }}
-              prefix={<SearchOutlined />}
-            />
-          </Form.Item>
-          <Form.Item name="role" label="角色">
-            <Select
-              placeholder="全部"
-              allowClear
-              style={{ minWidth: 140 }}
-              options={[
-                { label: '个人用户', value: 'personal' },
-                { label: '企业员工', value: 'employee' },
-                { label: '管理员', value: 'admin' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="status" label="状态">
-            <Select
-              placeholder="全部"
-              allowClear
-              style={{ minWidth: 140 }}
-              options={[
-                { label: '草稿', value: '草稿' },
-                { label: '已提交', value: '已提交' },
-                { label: '审核中', value: '审核中' },
-                { label: '已通过', value: '已通过' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                查询
-              </Button>
-              <Button onClick={handleReset} icon={<ReloadOutlined />}>
-                重置
-              </Button>
-            </Space>
-          </Form.Item>
-
-          <Form.Item style={{ marginLeft: 'auto' }}>
+          onSearch={handleSearch}
+          debounceMs={280}
+          triggerOnChange
+          formProps={{ style: { marginBottom: 0, rowGap: 8, flexShrink: 0 } }}
+          extra={
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -295,8 +255,51 @@ export default function ListPage() {
             >
               新增记录
             </Button>
-          </Form.Item>
-        </Form>
+          }
+        >
+          <SearchItem
+            type="input"
+            name="keyword"
+            formItemProps={{ label: '关键字' }}
+            innerProps={{
+              placeholder: '编号/用户名/邮箱',
+              allowClear: true,
+              style: { minWidth: 220 },
+              prefix: <SearchOutlined />,
+            }}
+          />
+          <SearchItem
+            type="select"
+            name="role"
+            formItemProps={{ label: '角色' }}
+            innerProps={{
+              placeholder: '全部',
+              allowClear: true,
+              style: { minWidth: 140 },
+              options: [
+                { label: '个人用户', value: 'personal' },
+                { label: '企业员工', value: 'employee' },
+                { label: '管理员', value: 'admin' },
+              ],
+            }}
+          />
+          <SearchItem
+            type="select"
+            name="status"
+            formItemProps={{ label: '状态' }}
+            innerProps={{
+              placeholder: '全部',
+              allowClear: true,
+              style: { minWidth: 140 },
+              options: [
+                { label: '草稿', value: '草稿' },
+                { label: '已提交', value: '已提交' },
+                { label: '审核中', value: '审核中' },
+                { label: '已通过', value: '已通过' },
+              ],
+            }}
+          />
+        </FormSearch>
 
         {/*
          * Table 容器:表体滚动唯一区域。

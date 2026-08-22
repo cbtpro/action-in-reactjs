@@ -9,6 +9,7 @@ import SettingsPage from '@/pages/settings/Index'
 import NotFoundPage from '@/pages/NotFoundPage'
 import DemoPage from '@/pages/demo/Index'
 import PermissionDemoPage from '@/pages/demo/PermissionDemo'
+import ImeFormDemoPage from '@/pages/demo/ImeFormDemo'
 
 /**
  * 面包屑单个项 —— 支持标题和可选的跳转路径
@@ -61,6 +62,11 @@ export const router = createBrowserRouter([
             path: 'permission',
             element: <PermissionDemoPage />,
             handle: { breadcrumb: '权限演示' } satisfies RouteHandle,
+          },
+          {
+            path: 'ime-form',
+            element: <ImeFormDemoPage />,
+            handle: { breadcrumb: 'IME 表单校验' } satisfies RouteHandle,
           },
         ],
       },

@@ -1,0 +1,662 @@
+import { Meta } from '@storybook/blocks'
+
+<Meta title="实践/增删改查很简单，但写好增删改查不简单" />
+
+# 增删改查很简单，但写好增删改查不简单
+
+每个前端项目都绕不开增删改查。列表展示、搜索筛选、新建编辑、详情查看、提交保存——这些功能用框架的默认能力堆一下就能跑起来。但真正在产品环境里用起来，你会发现一堆问题：表单回填闪一下空状态、列表高度算不准出现双滚动条、编辑完不知道保存还是取消、自定义组件没法接进表单校验……
+
+这些问题不是"功能没实现"，而是"实现得不够好"。
+
+下面拿项目里的实际代码，聊聊那些"看起来简单但容易写砸"的细节。
+
+---
+
+## 列表页：一个"高度"能踩多少坑
+
+列表页的骨架很朴素：搜索条件 + 表格 + 分页。功能上没什么可说的，但布局上有个经典问题——**表体滚动区域的高度怎么算**。
+
+最直觉的写法是给 Table 一个固定的 `scroll={{ y: 400 }}`。但屏幕尺寸变了呢？搜索区展开了呢？硬编码的 400 在 1080p 屏幕上浪费空间，在笔记本上又挤出双滚动条。
+
+项目里的做法是用 `ResizeObserver` 动态测量：
+
+```tsx
+const tableWrapRef = useRef<HTMLDivElement>(null)
+const [scrollY, setScrollY] = useState<number>(400)
+
+useLayoutEffect(() => {
+  const el = tableWrapRef.current
+  if (!el) return
+
+  const measure = () => {
+    if (el.clientHeight > 0) setScrollY(el.clientHeight)
+  }
+  measure()
+
+  const ro = new ResizeObserver(() => measure())
+  ro.observe(el)
+  return () => ro.disconnect()
+}, [])
+```
+
+这段代码做的事情很简单：监听容器高度变化，把值写给 Table 的 `scroll.y`。但关键在于整个布局链路的设计。
+
+从最外层到最内层，高度是一级一级分配下来的：
+
+```text
+section (flex:1, min-height:0)
+  └── Card (flex:1 1 auto, min-height:0, flex-column)
+        ├── 搜索区 (flex-shrink:0)        ← 高度固定
+        ├── Table 容器 (flex:1, min-height:0)  ← 吃掉剩余空间
+        │     └── ResizeObserver 测量 → scroll.y
+        └── Pagination (flex-shrink:0)    ← 固定在底部
+```
+
+每一层都有 `min-height:0`。这不是凑数的属性——flex 子项默认的 `min-height` 是 `auto`，内容会撑开容器，导致 `flex:1` 无法真正缩小。加了 `min-height:0`，容器才能被 flex 正确地分配高度，Table 才能在固定高度内自己滚动。
+
+另一个细节是分页。很多人直接用 antd Table 自带的 `pagination` 属性。但内置分页会跟着表体一起滚动，用户翻页得先滚到表格底部。把 `pagination` 设为 `false`，独立放一个 `<Pagination>` 在 Card 底部，分页就常驻可视区域了。
+
+这些不是什么高深的技巧，但每个细节差一点，用户体验就差一截。
+
+---
+
+## 表单页：一个组件三种模式
+
+新建、详情、编辑——三个页面共用一个表单结构，唯一区别是"能不能编辑"和"提交按钮叫什么"。
+
+拆成三个页面当然能跑，但表单字段的布局、校验规则、数据结构全是一样的，复制三份代码意味着改一个字段得改三个文件。
+
+项目里的做法是**用 URL 参数驱动模式，用派生状态替代冗余 state**：
+
+```tsx
+const [searchParams] = useSearchParams()
+const recordId = searchParams.get('id')
+const recordExists = Boolean(recordId)
+
+const [editable, setEditable] = useState<boolean>(!recordExists)
+
+// 页面模式是推导出来的，不是第三个 state
+const pageMode: PageMode = !recordExists ? 'create' : editable ? 'edit' : 'detail'
+const formDisabled = !editable
+```
+
+`pageMode` 是从 `recordId` 和 `editable` 推导出来的，本身不存 state。这避免了"三个状态变量互相矛盾"的情况——比如 `mode` 是 `create` 但 `editable` 是 `false`，代码里就不会出现这种组合。
+
+模式确定后，UI 的差异就很简单了：
+
+```tsx
+{pageMode === 'detail' ? (
+  <Button type="primary" icon={<EditOutlined />} onClick={handleEnableEdit}>
+    编辑
+  </Button>
+) : pageMode === 'edit' ? (
+  <Button danger icon={<StopOutlined />} onClick={handleCancelEdit}>
+    取消编辑
+  </Button>
+) : null}
+```
+
+详情模式下"编辑"按钮在面包屑栏，不在表单底部。这样首屏不被操作按钮占空间，用户先看数据，想改了再点编辑。这种交互比"底部永远摆一排按钮"自然得多。
+
+### 数据回填的时机
+
+有 `id` 的页面进入时要拉详情接口、回填表单。但 antd 的 `Form` 组件有个特性：`setFieldsValue` 必须在 Form 的 `ref` 就绪后才能调用。
+
+项目用 `useEffect` + `active` 标志位处理：
+
+```tsx
+useEffect(() => {
+  if (!recordId) return
+  let active = true
+  setLoading(true)
+  void (async () => {
+    try {
+      const rec = await getFormRecord(recordId)
+      if (!active) return        // 组件已卸载，不再 setState
+      // ...回填逻辑
+    } finally {
+      if (active) setLoading(false)
+    }
+  })()
+  return () => { active = false }
+}, [recordId])
+```
+
+`active` 标志位防止了"请求发出后用户立刻返回列表页，组件卸载了但 setState 还在跑"的内存泄漏。这不是锦上添花——快速来回点击的场景下必现。
+
+### DatePicker 的类型边界
+
+DatePicker 的值是 `dayjs` 对象，但表单数据契约里 `birthday` 是 `string`。在回填和提交时各做一次转换：
+
+```tsx
+// 回填：string → dayjs
+birthday: birthday ? dayjs(birthday) : birthday
+
+// 提交：dayjs → string
+birthday: dayjs(values.birthday).format('YYYY-MM-DD')
+```
+
+这个转换只在数据边界做一次——回填入口和提交出口。内部数据结构始终保持 `string` 契约，不会出现"一半地方是 dayjs，一半地方是 string"的混乱。开闭原则在边界处的体现。
+
+---
+
+## 表单组件封装：五种写法，五种取舍
+
+这是项目里最有意思的部分。同一个"导师选择"组件，用五种不同的方式接进 antd Form，每种解决不同的问题。
+
+### v1：隐藏 Input
+
+最直觉的方案。外层 `Form.Item` 只负责 label 和布局，内层放一个 `display:none` 的 `<Input>` 承接 `value/onChange`：
+
+```tsx
+<Form.Item label={...}>
+  <MentorDisplayTable ... />
+  <Form.Item name={name} noStyle rules={mergedRules}>
+    <Input style={{ display: 'none' }} />
+  </Form.Item>
+</Form.Item>
+```
+
+值的读写通过 `Form.useWatch` 和 `form.setFieldValue` 手动串联。好处是展示层和字段绑定完全解耦——Table 不用管表单协议，只要能展示数据就行。坏处是多了一层隐藏 DOM，`Form.disabled` 也不会自动禁用自定义按钮。
+
+### v2：受控组件
+
+antd Form.Item 有个原生协议：带 `name` 的 Form.Item 会给唯一子元素注入 `value` 和 `onChange`。所以子组件只要声明这两个 prop，就能自动接进表单：
+
+```tsx
+<Form.Item name={name} label={...} rules={mergedRules}>
+  <MentorFieldControl mode={mode} ... />
+</Form.Item>
+
+// 子组件
+function MentorFieldControl({ value, onChange, mode, ... }) {
+  // value 是当前字段值
+  // onChange(id) 写回字段值，antd 自动触发校验
+}
+```
+
+不需要隐藏 Input，不需要 `Form.useWatch`，不需要 `form.setFieldValue`——antd 的 cloneElement 机制全自动。这是 antd 官方推荐的写法，代码最少。
+
+v1 和 v2 的本质区别在于"谁负责值管理"：v1 是组件自己管（通过 form 实例读写），v2 是 antd 帮你管（通过 props 注入）。
+
+### v3：纯校验注册
+
+把 `Form.Item` 拆成两个职责完全独立的节点：
+
+```tsx
+<Form.Item label={...}>          {/* 只负责 label + 布局 */}
+  <MentorDisplayTable ... />
+</Form.Item>
+<Form.Item name={name} noStyle rules={mergedRules} />  {/* 只挂校验，无子元素 */}
+```
+
+第二个 `Form.Item` 没有任何子元素，它存在的唯一目的是把 `name` 和 `rules` 注册到 Form 的校验树。值读写仍然走 `Form.useWatch` + `form.setFieldValue`。
+
+这种写法验证了一个认知：antd 的 `Form.Item(name)` 本质是一个"校验节点 + cloneElement 注入器"。不给子元素，cloneElement 那条路就短路了，但校验树照常挂。
+
+### v4：shouldUpdate 联动
+
+前面三种都是"自管值读写"或"antd 注入值"。v4 引入了第三条路：用 `<Form.Item shouldUpdate>` 的 render-prop 驱动重渲染。
+
+场景是这样的：选导师之前要先选部门，部门变了，导师列表要刷新。`Form.useWatch` 只能监听自己那个字段，没法响应兄弟字段的变化。`shouldUpdate` 解决的就是这个问题。
+
+```tsx
+<Form.Item
+  noStyle
+  shouldUpdate={(prev, next) => {
+    // name 自身值变化时重渲染
+    const selfChanged = getValueByPath(prev, name) !== getValueByPath(next, name)
+    if (selfChanged) return true
+    // 叠加调用方的自定义订阅（如 department 变化）
+    return shouldUpdate?.(prev, next) ?? false
+  }}
+>
+  {(form: FormInstance) => (
+    <MentorFieldShell form={form} fieldName={name} ... />
+  )}
+</Form.Item>
+```
+
+render-prop 里的函数每次表单值变化时被调用，`shouldUpdate` 返回 `true` 就重渲染。这比手写 `useEffect` + `useWatch` 监听多个字段优雅得多——声明式地描述"什么情况下需要刷新"，而不是命令式地写订阅。
+
+### v5：自定义错误展示
+
+antd 的 `Form.Item` 默认把校验错误展示在输入框下方一行红字。但有时候产品要求错误提示出现在表格上方，用红底卡片展示。v5 通过 `Form.Item.useStatus()` 拿到校验状态：
+
+```tsx
+const { errors = [] } = Form.Item.useStatus()
+
+// 自定义错误 UI
+{errors.length > 0 && (
+  <div role="alert" style={{ color: '#ff4d4f', background: 'rgba(255,77,79,0.06)', ... }}>
+    {errors.map((e, i) => <span key={i}>{e}</span>)}
+  </div>
+)}
+```
+
+这里有个设计取舍：label 里的"添加导师"按钮在 `Form.Item(name)` 之外，没法通过 props 触发子组件内部的弹窗。v5 用 `onReady` 回传一个 `cmd` 句柄解决：
+
+```tsx
+const [cmd, setCmd] = useState<{ openModal: () => void } | null>(null)
+
+// label 按钮
+<Button onClick={() => cmd?.openModal()} disabled={!cmd}>添加导师</Button>
+
+// 子组件挂载后回传句柄
+<MentorFieldControlV5 onReady={setCmd} ... />
+
+// 子组件内部
+useEffect(() => {
+  onReadyRef.current?.({ openModal: () => setModalOpen(true) })
+  return () => onReadyRef.current?.({ openModal: () => {} })
+}, [])
+```
+
+这是 React 中"跨层命令传递"的经典模式：父组件需要触发子组件内部状态，但没有直接 ref 通道，就通过 `onReady` 回调建立一条命令管道。比 `useImperativeHandle` 更轻量，不需要 `forwardRef`。
+
+### 五种写法的取舍
+
+<table>
+  <thead>
+    <tr>
+      <th>版本</th>
+      <th>值管理</th>
+      <th>校验挂载</th>
+      <th>适用场景</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>v1 隐藏 Input</td>
+      <td>手动 useWatch + setFieldValue</td>
+      <td>内层 noStyle Form.Item</td>
+      <td>展示层与字段绑定解耦</td>
+    </tr>
+    <tr>
+      <td>v2 受控组件</td>
+      <td>antd 自动注入 value/onChange</td>
+      <td>Form.Item(name + rules)</td>
+      <td>最少代码，antd 原生范式</td>
+    </tr>
+    <tr>
+      <td>v3 纯校验注册</td>
+      <td>手动 useWatch + setFieldValue</td>
+      <td>独立无子元素 Form.Item</td>
+      <td>验证 Form.Item 的校验树机制</td>
+    </tr>
+    <tr>
+      <td>v4 shouldUpdate</td>
+      <td>useWatch + setFieldValue + render-prop</td>
+      <td>独立 noStyle Form.Item</td>
+      <td>跨字段级联联动</td>
+    </tr>
+    <tr>
+      <td>v5 自定义错误</td>
+      <td>useWatch + setFieldValue</td>
+      <td>Form.Item(name + rules) + useStatus</td>
+      <td>自定义错误 UI 位置和样式</td>
+    </tr>
+  </tbody>
+</table>
+
+没有一个"最好"的版本。v2 代码最少但灵活性受限；v1 解耦最彻底但代码量大；v4 处理联动最优雅但心智模型复杂。选哪个取决于具体场景和团队约定。
+
+---
+
+## 那些容易被忽略的细节
+
+### 类型契约独立
+
+表单数据结构定义在 `types.ts` 里，不在页面组件里：
+
+```ts
+export interface FormData {
+  username: string
+  password: string
+  email: string
+  // ...
+  mentorId?: string
+}
+```
+
+列表行类型 `FormRecord extends FormData`，加 `id`、`createdAt`、`status`。服务层 `getFormRecord` 返回 `FormRecord`，表单页回填时取 `FormData` 部分。
+
+类型从一个文件扩散到全项目，改一个字段，编译器在所有引用处报错。比"在页面组件里随手定义 interface"安全得多。
+
+### DynamicListItem 的职责边界
+
+`Form.List` 里的每一行有标签输入框、内容输入框、移除按钮。把这一坨抽成 `DynamicListItem`，父组件只管增删逻辑：
+
+```tsx
+// 父组件
+<Form.List name="contacts">
+  {(fields, { add, remove }) => (
+    <>
+      {fields.map((field) => (
+        <DynamicListItem
+          key={field.key}
+          field={field}
+          showRemove={fields.length > 0 && !formDisabled}
+          onRemove={() => remove(field.name)}
+          disabled={formDisabled}
+        />
+      ))}
+    </>
+  )}
+</Form.List>
+```
+
+`DynamicListItem` 只管"这一行长什么样"，`Form.List` 的 `add`/`remove` 逻辑在父组件。子组件不直接调 `remove`，只通过 `onRemove` 回调通知父组件。单一职责。
+
+### 智能吸底操作栏
+
+表单底部那排"提交""重置"按钮，如果永远显示，会占首屏空间；如果只在底部静态展示，长表单要滚到底才看得到。
+
+`StickyActions` 组件用 `IntersectionObserver` 监听一个零高度的占位锚点，实现了三种状态：
+
+- **hidden**：用户还没滚过，不显示，首屏干净
+- **sticky**：滚动了但锚点不在视口，`position:fixed` 吸底
+- **inline**：滚到底了，锚点进入视口，恢复普通排布
+
+```tsx
+function recompute() {
+  if (anchorVisible) {
+    setState('inline')        // 锚点可见 → 静态底部
+  } else if (hasScrolledRef.current) {
+    setState('sticky')        // 滚动了但锚点不可见 → 吸底
+  } else {
+    setState('hidden')       // 没滚过 → 隐藏
+  }
+}
+```
+
+吸底时用 `position:fixed` 而非 `createPortal` 到 body，配合祖先元素的 `transform` 创建包含块，让 fixed 相对于路由页面区域浮动，而不是全浏览器浮动。这个细节决定了吸底条不会脱离内容区的宽度约束。
+
+### 路由驱动的面包屑
+
+面包屑不是手写配置，是从路由 `handle.breadcrumb` 自动提取的：
+
+```tsx
+// router.tsx
+{
+  path: 'form',
+  element: <FormPage />,
+  handle: {
+    breadcrumb: (params: URLSearchParams) => {
+      const id = params.get('id')
+      return [
+        { title: '列表', path: '/list' },
+        { title: id ? `表单 ${id}` : '新建表单' },
+      ]
+    },
+  },
+}
+```
+
+`useMatches()` 返回从根到叶的所有匹配路由，`Breadcrumb` 组件遍历它们，把 `handle.breadcrumb` 归一化成数组渲染。新增路由只需要在 router 配置里加一行 `handle`，面包屑组件不用改。开闭原则。
+
+---
+
+## 按钮与操作权限：看得见不等于点得到
+
+增删改查做到最后，绕不开权限。"新建""删除""导出""审批"这些按钮，每个角色能看到的、能点击的都不一样。写 `if (user.role === 'admin')` 判断一下当然能跑，但角色多了之后代码会堆满条件分支，改一条权限规则得跑遍所有页面。
+
+项目里的做法是把权限判断收敛成三层结构，加上 HOC + Hook 两层 API，业务代码里基本看不到裸的 `if` 判断。
+
+### 三层权限判断：角色 + 权限码 + 业务状态
+
+权限不是只有"角色能不能做"这一层。比如员工可以"编辑"记录，但只允许编辑**状态为草稿**的自己的记录——这就是业务状态级的判断。
+
+把判断拆成三层 AND：
+
+```ts
+// 1. admin 角色：所有权限码短路放行（超级管理员例外规则）
+// 2. 权限码矩阵：当前动作的权限码在矩阵里允许哪些角色
+// 3. customFn 业务函数：通过权限码之后再做业务状态判断
+
+export function hasPermission(params: {
+  userRoles: RoleKey[]
+  codes?: PermissionCode[]
+  roles?: RoleKey[]
+  customFn?: (userRoles, extra?) => boolean
+  extra?: unknown
+}): boolean {
+  const isAdmin = userRoles.includes('admin')
+
+  // 第一层：权限码 / 指定角色 矩阵判断
+  let matrixPass = true
+  if (codes?.length) {
+    matrixPass = isAdmin || codes.some((c) =>
+      (DEFAULT_PERMISSION_MATRIX[c] ?? []).some((r) => userRoles.includes(r)),
+    )
+  } else if (roles?.length) {
+    matrixPass = isAdmin || roles.some((r) => userRoles.includes(r))
+  }
+  if (!matrixPass) return false
+
+  // 第二层：业务级 customFn（和矩阵 AND）
+  if (customFn && !customFn(userRoles, extra)) return false
+
+  return true
+}
+```
+
+三层各自的职责非常清晰：矩阵管"角色是否允许"，customFn 管"数据状态是否允许"，admin 短路是个显式的例外规则。这样改权限时，矩阵只改矩阵，业务逻辑只改业务函数，互不干扰。
+
+### withPermission HOC：给按钮加权限只要一行
+
+大部分按钮的权限是"静态固定"的——导出按钮永远需要 `record:export`，删除按钮永远需要 `record:delete`。这种场景最适合用 HOC 预封装一次，到处直接用。
+
+```tsx
+// 封装一次：权限 + fallback 策略固定
+const CreateButton = withPermission({
+  codes: ['record:create'],
+  fallback: 'disable',
+  tooltipText: '当前角色无创建权限，请联系管理员',
+})(Button)
+
+const UserManageButton = withPermission({
+  codes: ['system:user-manage'],
+  fallback: 'hide',
+})(Button)
+
+// 业务页面里直接用，不用再写权限判断
+<Space>
+  <CreateButton type="primary">新建</CreateButton>
+  <ExportButton>导出</ExportButton>
+  <DeleteButton danger>删除</DeleteButton>
+  <UserManageButton type="link">用户管理</UserManageButton>
+</Space>
+```
+
+`fallback` 决定了无权限时的行为：
+
+- **`hide`**：直接返回 `null`，整个按钮不渲染。适合"敏感到连功能名都不能泄露"的场景——比如用户管理、角色管理，普通访客压根就不该看到这些按钮存在。
+- **`disable`**：保留按钮形态，但加一层 `pointer-events:none` + `opacity:0.5` 的禁用容器，外层包一个 Tooltip 显示"暂无操作权限"。**用户能看到这个功能存在，也知道为什么自己不能点**，交互上比 hide 友好得多。
+
+`disable` 模式的关键是不用依赖被包装组件自己的 `disabled` prop。外层 span 统一拦截所有鼠标事件：
+
+```tsx
+return (
+  <Tooltip title={actualTooltip} placement="top">
+    <span
+      aria-disabled
+      style={{
+        display: 'inline-block',
+        opacity: 0.5,
+        cursor: 'not-allowed',
+        pointerEvents: 'none',
+      }}
+    >
+      {content}
+    </span>
+  </Tooltip>
+)
+```
+
+Button、Card、自定义组件都能被正确禁用，HOC 对被包装组件零侵入。
+
+### 行级权限：customFn + extra 透传业务数据
+
+列表里每一行的编辑/审批按钮，权限不只是"角色能不能做"，还要看这一行的状态。比如：
+
+- 编辑：只有 status === '草稿' 的行才能编辑
+- 审批：只有 status === '已提交' 的行才能审批
+
+这种时候 HOC 的静态配置不够，需要通过运行时 props 动态传权限参数。做法是先包一个"空白权限"的编辑按钮组件，在使用时按行传条件：
+
+```tsx
+const EditButton = withPermission()(Button)
+
+columns = [
+  {
+    title: '操作',
+    render: (_, record) => (
+      <Space>
+        <EditButton
+          codes={['record:edit']}
+          fallback="disable"
+          tooltipText="只有草稿状态的记录可编辑"
+          extra={record}
+          customFn={(roles, r) => (r as DemoRecord).status === '草稿'}
+        >
+          编辑
+        </EditButton>
+
+        <PermissionGuard
+          codes={['record:approve']}
+          fallback="disable"
+          tooltipText="只有已提交且通过权限校验的可审批"
+          extra={record}
+          customFn={(roles, r) => (r as DemoRecord).status === '已提交'}
+        >
+          <Button type="link">审批</Button>
+        </PermissionGuard>
+      </Space>
+    ),
+  },
+]
+```
+
+`extra` 做纯透传——withPermission 不关心 `record` 有什么字段，只负责把它原样交给 `customFn`。这样类型和语义都干净：权限层不读业务字段，业务判断完全在 `customFn` 里。
+
+`PermissionGuard` 是 HOC 的便捷写法，对应"一次性行内包裹"的场景。底层走的是同一个 `usePermission` Hook，API 语义和 HOC 保持一致。
+
+### usePermission Hook + check：逻辑层里做二次判断
+
+有些权限判断不在 JSX 里，而是在事件回调、路由守卫、菜单构造这种逻辑层场景。`usePermission` 直接返回 `hasAuth` 布尔值，额外给一个 `check` 函数做"别的权限"二次判断：
+
+```tsx
+const { hasAuth, userRoles, check } = usePermission({ codes: ['record:delete'] })
+
+useEffect(() => {
+  if (!hasAuth) {
+    message.warning('您没有删除权限，该功能已隐藏')
+  }
+}, [hasAuth])
+
+const handleBatchAction = () => {
+  // 同一个 Hook 里 check 另一个动作的权限，不用再调一次 Hook
+  if (check({ codes: ['record:export'] })) {
+    console.log('允许导出', userRoles)
+  } else {
+    message.warning('无批量导出权限')
+  }
+}
+```
+
+`userRoles` 直接返回当前 Redux 里的角色列表，有时候页面需要做角色相关的辅助展示（比如顶部的角色 tag），可以直接从 Hook 拿，不用再加一次 `useAppSelector`。
+
+---
+
+## 小公司不要盲目封装组件：只封装业务组件
+
+很多团队一开始就想做"自己的组件库"，把 antd 的按钮包一层、输入框包一层、表格包一层，理由是"统一默认样式""以后换 UI 库只改一处"。实际结果往往是：样式没统一多少，业务要个原生属性还得回头改封装层，换 UI 库更是遥遥无期。
+
+小公司的工程师资源是有限的，封装组件**只做一件事：封装业务，不封装 UI 样式**。
+
+### 业务组件 vs UI 外壳组件
+
+拿这个项目里的组件做对比，一目了然：
+
+**业务组件——值得封装：**
+
+- `MentorSelectField`：封装的是"选择一位导师"这条完整业务链路——点按钮弹搜索窗、分页查列表、选中后查详情、把详情展示在表格里、把主键写入表单字段、移除时清字段。这套流程在任何页面用到都是一模一样的，不封装就要每个页面复制几百行代码。
+- `StickyActions`：封装的是"表单操作栏随滚动在吸底/静态/隐藏三态切换"——IntersectionObserver 锚点、滚动容器查找、iOS 安全区、fixed 包含块。这也是业务交互层面的通用逻辑。
+- `withPermission`：封装"给按钮/组件加权限"的判断链路——Redux 取角色、三层权限判断、hide/disable 两种降级、Tooltip 提示。不封装的话，每个按钮都是一串 `if`。
+
+**UI 外壳组件——别去封装：**
+
+- "我们的按钮默认 size 都是 large，包一层 MyButton 默认 size='large' 吧。"——下个月产品说"这个操作栏空间不够，按钮要 small"，你就得给 MyButton 暴露 size，那跟直接用 antd Button 有什么区别？
+- "表格我们统一加个 bordered 和 stripe，包一层 MyTable。"——半年后产品说"这个页面表格要紧凑风格"，你又得把 antd Table 的 bordered、size、stripe 全部从 MyTable 上挖洞透传。
+
+区别在于：**业务组件是在加能力，UI 外壳组件是在减能力。**MentorSelectField 让你不写几百行就能用"导师选择"；而 MyButton 让你想用 `shape="circle"` 的时候得先去组件库里加一行 prop 暴露。
+
+### 封装的底线：别吞被包装组件的 props
+
+如果确实有理由包一层 UI 组件，那最基本的底线是**不能吞原生 props**。拿项目里 `withPermission` 做正面例子：
+
+```tsx
+// 无权限时，剥离 withPermission 自己管的 props，剩下的全部传给业务组件
+const {
+  codes: _c,
+  roles: _r,
+  customFn: _cf,
+  fallback: _f,
+  tooltipText: _t,
+  extra: _e,
+  ...compProps    // ← 这里是业务组件自己的 props（type、size、danger、onClick...）
+} = runtimeProps
+return <WrappedComp {...(compProps as P)} />
+```
+
+withPermission 只剥离 6 个"权限层自己管"的 prop，其余所有属性原封不动展开传下去。结果是：
+
+```tsx
+// antd Button 原生支持的几十种属性，withPermission 封装后一个都没丢
+<CreateButton
+  type="primary"
+  size="large"
+  ghost
+  shape="round"
+  icon={<PlusOutlined />}
+  onClick={() => console.log('业务回调不受影响')}
+>
+  新建
+</CreateButton>
+```
+
+业务组件想用什么原生属性，直接写就行，封装层根本不需要知道这些属性的存在。这才是符合开闭原则的封装——**新增被包装组件的 props，不需要改封装层代码**。
+
+反面例子就太常见了：
+
+```tsx
+// 反例：只暴露了自己认识的几个 prop，剩下的全丢了
+function MyButton({ type, size, children }) {
+  return <Button type={type} size={size} style={{ marginRight: 8 }}>{children}</Button>
+}
+```
+
+产品要一个 `danger` 删除按钮，不行；要 `block` 铺满整行，不行；要 `loading` 态，不行；要 `icon` 前缀，不行。每要一个属性，都得去 MyButton 加一行 prop 声明，时间全花在"让封装和原生组件对齐"上了。
+
+### antd 本身就是你的样式标准
+
+"以后换 UI 库怎么办？"——这是最常见的封装理由。现实是：小公司做中后台，antd 一旦用起来，三五年内换 UI 库的概率不到 10%。为了一个几乎不会发生的事情，让每条业务代码都要绕一下 MyButton / MyTable / MyInput，这是典型的过度设计。
+
+antd 本身就是经过大量项目验证的样式标准。如果产品视觉和 antd 有差异，正确做法是：
+
+- 通过 antd 的 ConfigProvider（主题 token）做全局样式覆盖——这是官方推荐的、稳定的方式
+- 需要的话在 CSS 层写少量覆盖样式
+- 不要在组件层包一层"样式外壳"
+
+真正要封装的，是那些**重复出现的业务流程**，而不是通用组件的默认外观。小公司的工程师人少，应该把时间花在业务逻辑上，而不是造一套"和 antd 差不多但少几十种 props 的壳组件"。
+
+---
+
+## 写在最后
+
+增删改查的"增"不是 `form.submit()`，"删"不是 `fetch(DELETE)`，"改"不是 `form.setFieldsValue()`，"查"不是 `Table + Pagination`。
+
+功能能跑，和功能好用之间，隔着一堆细节：高度链路要连贯、模式切换要派生、类型契约要独立、组件封装要解耦、交互时机要自然、回填时机要安全、按钮权限要分层、封装边界要清醒。
+
+这些细节单拎出来都不难，难的是在写代码的时候想到它们。写好增删改查不靠什么高深框架或神秘技巧，靠的是对每个"看起来无所谓"的地方多想一步。
