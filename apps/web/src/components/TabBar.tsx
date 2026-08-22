@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Tabs } from 'antd'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useMatches, useNavigate } from 'react-router-dom'
+import type { RouteHandle } from '@/app/router'
 
 /**
  * 路由 Tab 数据结构
@@ -27,35 +28,23 @@ const HOME_TAB: RouteTab = {
 }
 
 /**
- * 路由 → Tab 标签 映射
+ * 从路由 handle.title 提取 Tab 标签
  *
- * 开闭原则:新增路由时只需在此追加一行,
- * TabBar 自动识别并显示对应标签,无需修改组件逻辑。
- */
-const ROUTE_LABEL_MAP: Record<string, string> = {
-  '/': '首页',
-  '/demo': '演示',
-  '/charts': '图表',
-  '/list': '列表',
-  '/about': '关于',
-}
-
-/**
- * 根据当前路径和查询参数生成 Tab 标签
+ * 数据来源:router.tsx 的 handle.title(与 breadcrumb 职责分离)。
  *
- * 特殊路由(如 /form 带 ?id=)动态生成更具语义的标签:
- * - /form → "新建表单"
- * - /form?id=REC1000 → "表单 REC1000"
+ * title 支持两种形式:
+ *   - string  → 直接使用
+ *   - 函数    → 传入 URLSearchParams,返回动态标题(如 /form?id=REC1000 → "表单 REC1000")
+ *
+ * 开闭原则:新增路由只需在 handle 中配置 title,TabBar 零修改。
  */
-function getTabLabel(pathname: string, search: string): string {
-  if (ROUTE_LABEL_MAP[pathname]) return ROUTE_LABEL_MAP[pathname]
-
-  if (pathname === '/form') {
-    const id = new URLSearchParams(search).get('id')
-    return id ? `表单 ${id}` : '新建表单'
-  }
-
-  return '未找到'
+function getTabTitle(
+  handle: RouteHandle | undefined,
+  params: URLSearchParams,
+): string | undefined {
+  if (!handle?.title) return undefined
+  const { title } = handle
+  return typeof title === 'function' ? title(params) : title
 }
 
 /**
@@ -73,12 +62,26 @@ function getTabLabel(pathname: string, search: string): string {
 export default function TabBar() {
   const location = useLocation()
   const navigate = useNavigate()
+  const matches = useMatches()
 
   /*
    * Tab key = pathname + search,确保同路由不同参数各占一个 Tab。
    * 首页的 key 固定为 '/',与 location.pathname='/' + location.search='' 拼接一致。
    */
   const currentKey = location.pathname + location.search
+
+  /*
+   * 从当前匹配链的末级路由 handle.title 提取 Tab 标签。
+   *
+   * handle.title 是专为 Tab 标题设计的路由 meta 字段,
+   * 与 handle.breadcrumb(面包屑,多级、可点击)职责分离。
+   */
+  const params = new URLSearchParams(location.search)
+  const currentLabel = (() => {
+    const leaf = matches[matches.length - 1]
+    const handle = leaf?.handle as RouteHandle | undefined
+    return getTabTitle(handle, params) ?? location.pathname
+  })()
 
   const [tabs, setTabs] = useState<RouteTab[]>([HOME_TAB])
 
@@ -94,7 +97,7 @@ export default function TabBar() {
         ...prev,
         {
           key: currentKey,
-          label: getTabLabel(location.pathname, location.search),
+          label: currentLabel,
           closable: true,
         },
       ]

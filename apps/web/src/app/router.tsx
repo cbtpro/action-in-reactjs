@@ -36,8 +36,22 @@ export interface BreadcrumbItem {
  */
 type BreadcrumbFn = (params: URLSearchParams) => string | BreadcrumbItem[]
 
+/**
+ * 路由 handle 中的 title 字段类型
+ *
+ * 专用于 Tab 标题、document.title 等需要"单级纯文本标题"的场景。
+ * 与 breadcrumb(面包屑,可多级、可点击)职责分离。
+ *
+ * - 字符串:静态标题(如 '列表')
+ * - 函数:从 query 参数动态生成(如 /form?id=REC1000 → '表单 REC1000')
+ */
+type TitleFn = (params: URLSearchParams) => string
+
 export type RouteHandle = {
+  /** 面包屑导航(多级、可点击),供 Breadcrumb 组件使用 */
   breadcrumb?: string | BreadcrumbFn
+  /** 页面标题(单级纯文本),供 TabBar / document.title 等使用 */
+  title?: string | TitleFn
 }
 
 /**
@@ -50,35 +64,39 @@ export const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
-    handle: { breadcrumb: '首页' } satisfies RouteHandle,
+    handle: { breadcrumb: '首页', title: '首页' } satisfies RouteHandle,
     children: [
       { index: true, element: <HomePage /> },
       {
         path: 'demo',
-        handle: { breadcrumb: '演示' } satisfies RouteHandle,
+        handle: { breadcrumb: '演示', title: '演示' } satisfies RouteHandle,
         children: [
-          { index: true, element: <DemoPage /> },
+          {
+            index: true,
+            element: <DemoPage />,
+            handle: { breadcrumb: '演示首页', title: '演示首页' } satisfies RouteHandle,
+          },
           {
             path: 'permission',
             element: <PermissionDemoPage />,
-            handle: { breadcrumb: '权限演示' } satisfies RouteHandle,
+            handle: { breadcrumb: '权限演示', title: '权限演示' } satisfies RouteHandle,
           },
           {
             path: 'ime-form',
             element: <ImeFormDemoPage />,
-            handle: { breadcrumb: 'IME 表单校验' } satisfies RouteHandle,
+            handle: { breadcrumb: 'IME 表单校验', title: 'IME 表单校验' } satisfies RouteHandle,
           },
         ],
       },
       {
         path: 'charts',
         element: <ChartsPage />,
-        handle: { breadcrumb: '图表' } satisfies RouteHandle,
+        handle: { breadcrumb: '图表', title: '图表' } satisfies RouteHandle,
       },
       {
         path: 'list',
         element: <ListPage />,
-        handle: { breadcrumb: '列表' } satisfies RouteHandle,
+        handle: { breadcrumb: '列表', title: '列表' } satisfies RouteHandle,
       },
       {
         path: 'form',
@@ -96,17 +114,22 @@ export const router = createBrowserRouter([
               { title: id ? `表单 ${id}` : '新建表单' },
             ]
           },
+          /* Tab 标题:动态生成,与面包屑末级一致但是独立配置 */
+          title: (params: URLSearchParams) => {
+            const id = params.get('id')
+            return id ? `表单 ${id}` : '新建表单'
+          },
         } satisfies RouteHandle,
       },
       {
         path: 'about',
         element: <AboutPage />,
-        handle: { breadcrumb: '关于' } satisfies RouteHandle,
+        handle: { breadcrumb: '关于', title: '关于' } satisfies RouteHandle,
       },
       {
         path: 'settings',
         element: <SettingsPage />,
-        handle: { breadcrumb: '设置' } satisfies RouteHandle,
+        handle: { breadcrumb: '设置', title: '设置' } satisfies RouteHandle,
       },
       { path: '*', element: <NotFoundPage /> },
     ],
