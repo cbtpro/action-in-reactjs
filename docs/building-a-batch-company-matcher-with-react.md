@@ -695,6 +695,42 @@ export function createPerformanceCompanyNames(count: number): string[] {
 pnpm test
 ```
 
+## 五、公司头像如何实现
+
+### 原理：真实 logo 优先，文字兜底
+
+每家公司在 `companyData.ts` 里都配置了一个 `logo` 对象，包含 `src`（图片地址，可选）、`background` 和 `foreground` 两个颜色值。渲染时先判断 `result.company?.logo.src` 是否存在：
+
+- 有图片（腾讯、拼多多、平安等已知品牌）：直接用一个 32×32 的 `<img>` 展示，外层套圆角容器，`object-fit: contain` 保证图片不变形地居中；
+- 没有图片（大量 `model-company-xxx` 模拟数据）：退化成文字头像，用 `logo.background` 做底色、`logo.foreground` 做字色。
+
+文字内容来自单独维护的 `companyShortNames.ts` 简称表，而不是从工商全称里机械截取前两个字——"中国移动"如果硬切前两个字会变成"中国"，反而认不出是哪家公司，所以简称表是人工显式配置的，保证语义准确。
+
+### 字体自适应：固定字号 + 自动换行，而不是动态缩放
+
+目前没有做成真正"随文字长度自动缩放字号"的方案，而是走了更稳妥的折中路线：
+
+1. 头像容器固定为 32×32 的正方形；
+2. 字号写死为 11px，并收紧字间距（`letter-spacing: -0.2px`）；
+3. 在逻辑层判断简称长度：超过两个字（如"拼多多""中国移动"）就按 `shortName.slice(0, 2)` / `shortName.slice(2)` 拆成两行，分别放进 `logo-line` 的 `span` 里，`line-height` 压缩到 1.05，让两行挤在圆角方块里不溢出。
+
+这种方式比真正动态计算字号更可控：中文头像场景下简称长度通常只有 2~4 个字，穷举单行、双行两种排版规则，远比写一套根据容器宽度和字符数实时计算 `font-size` 的 JS 逻辑简单，也不会出现长公司名把字号压得过小看不清的问题。
+
+如果要做更通用的自适应，常见思路是：
+
+- 用 `canvas.measureText` 或临时 DOM 节点量出文字在当前字号下的实际渲染宽度，按容器宽度与文字宽度的比例反推合适的 `font-size`；
+- 或者用 CSS 的 container query units（如 `cqw`）按容器尺寸换算字号。
+
+但这类方案在头像这种小尺寸场景下性价比不高，容易出现字号抖动，极端情况下文字依然挤不下。
+
+### 可以用 SVG 实现吗
+
+可以，而且在很多设计系统里是更标准的做法。思路是把头像渲染成一个 `<svg>`，用 `<circle>` 或 `<rect rx="...">` 画底色背景，再用 `<text>` 节点把简称放在正中间，通过 `text-anchor="middle"` 和 `dominant-baseline="central"` 实现精确居中——这一点比 CSS 的 `display: grid; place-items: center` 更可靠，因为 CSS 文本的垂直居中容易受行高、基线这些隐性因素干扰，而 SVG 的 `text` 定位基于坐标系，不会被字体 metrics 悄悄带偏。
+
+真自适应在 SVG 里也更容易做：渲染前用 `getBBox()` 读取 `text` 节点的实际宽度，和画布宽度比较，超出就整体缩小 `font-size` 重新渲染，或者给 `<text>` 套一层 `<g>` 做 `transform: scale()` 整体缩放——这个思路比操作 DOM 文本更干净，不需要处理 `white-space`、`overflow` 这些 CSS 细节。
+
+唯一需要权衡的是：真实 logo 图片如果也想统一成 SVG，PNG/JPEG 位图没法直接当矢量塞进去，通常做法是 `<image href="logo.png">` 嵌入，本质上还是在用 `<img>` 的能力，只是包了一层 SVG 容器，所以图片 logo 这块用不用 SVG 差别不大，真正受益的是纯文字兜底头像这一种情况。
+
 ## 总结
 
 批量公司匹配的难点不只是匹配算法，而是去重以后仍要保持来源可追溯，并让两侧虚拟列表、高亮状态和 SVG 连线始终指向同一组业务对象。
