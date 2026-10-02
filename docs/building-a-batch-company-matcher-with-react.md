@@ -25,6 +25,19 @@
 - 多个关键词命中同一企业时只渲染一个标准结果；
 - 输出去重后的企业名称、地区、信用代码和匹配方式。
 
+## 本文对应的当前代码
+
+Demo 已经按功能拆分，阅读源码时可以从下面四个入口开始：
+
+| 文件 | 先看什么 |
+| --- | --- |
+| [`CompanyMatchDemo.tsx`](../apps/web/src/pages/demo/company-match/CompanyMatchDemo.tsx) | 页面怎样组合两个 hooks、虚拟列表和展示组件 |
+| [`useCompanyMatchModel.ts`](../apps/web/src/pages/demo/company-match/useCompanyMatchModel.ts) | 输入、匹配、去重、过滤、排序和人工修正怎样形成视图数据 |
+| [`useCompanyMatchInteractions.ts`](../apps/web/src/pages/demo/company-match/useCompanyMatchInteractions.ts) | hover、双向滚动、DOM 登记和 SVG 连线怎样协作 |
+| [`companyMatchViewModel.ts`](../apps/web/src/pages/demo/company-match/companyMatchViewModel.ts) | 输入解析、结果稳定键和来源下标解析 |
+
+页面组件现在只保留布局状态以及 props、callback 的连接。本文前半部分先解释高亮、连线和虚拟滚动背后的原理；第四部分再把这些原理对应到两个 hook 的真实边界。示例代码均以当前实现为准，而不是假设所有逻辑都写在页面组件中。
+
 ## 案例
 
 在设计交互和数据流程前，可以参考这些企业批量查询产品：
@@ -107,7 +120,8 @@ export interface DeduplicatedCompanyMatch extends CompanyMatch {
 
 左侧的“阿里巴巴”与右侧的标准企业不是因为文字相似而高亮，也不是因为它们碰巧都在第 2 行，而是因为右侧结果的 `sourceIds` 包含 `source-1`。
 
-因此页面只保存一份状态：当前激活了哪些来源 ID。
+因此交互层只保存一份高亮状态：当前激活了哪些来源 ID。这份状态由
+`useCompanyMatchInteractions` 管理，页面组件只把它传给左右两侧的行组件。
 
 - hover 左侧 `source-1`：激活 `['source-1']`；
 - hover 右侧 `company-alibaba`：激活 `['source-0', 'source-1']`；
@@ -145,17 +159,21 @@ displayedResults.forEach((result, resultIndex) => {
 })
 ```
 
-hover 左侧时，通过索引定位并滚动右侧：
+hover 左侧时，通过索引定位并滚动右侧。当前实现还会同时记录鼠标坐标，供滚动结束后恢复 hover：
 
 ```tsx
-const handleSourceMouseEnter = (sourceId: string) => {
+const handleSourceMouseEnter = useCallback((
+  sourceId: string,
+  event: ReactMouseEvent<HTMLDivElement>,
+) => {
+  pointerPositionRef.current = { x: event.clientX, y: event.clientY }
   setHoveredSources([sourceId])
 
   const resultIndex = resultIndexBySourceId.get(sourceId)
   if (resultIndex !== undefined) {
-    resultListRef.current?.scrollToIndex(resultIndex)
+    syncListToIndex(resultListRef, resultIndex, 'result')
   }
-}
+}, [resultIndexBySourceId, setHoveredSources, syncListToIndex])
 ```
 
 右侧行挂载时，以企业 ID 登记 DOM：
@@ -164,12 +182,18 @@ const handleSourceMouseEnter = (sourceId: string) => {
 const getResultKey = (result: DeduplicatedCompanyMatch) =>
   result.company?.id ?? result.sourceId
 
-<div
-  ref={(element) => {
-    const key = getResultKey(result)
-    if (element) resultItemRefs.current.set(key, element)
-    else resultItemRefs.current.delete(key)
-  }}
+const registerResultItem = useCallback((
+  result: DeduplicatedCompanyMatch,
+  element: HTMLDivElement | null,
+) => {
+  const resultKey = getResultKey(result)
+  if (element) resultItemRefs.current.set(resultKey, element)
+  else resultItemRefs.current.delete(resultKey)
+}, [])
+
+<ResultListItem
+  result={result}
+  itemRef={(element) => registerResultItem(result, element)}
 />
 ```
 
@@ -192,9 +216,19 @@ const resultElement = result
 右侧记录已经直接携带 `sourceIds`，因此不需要反查 Map。以示例中的阿里巴巴为例，右侧 hover 会得到 `['source-0', 'source-1']`，左侧两行都应高亮。
 
 ```tsx
-const handleResultMouseEnter = (result: DeduplicatedCompanyMatch) => {
+const handleResultMouseEnter = useCallback((
+  result: DeduplicatedCompanyMatch,
+  event: ReactMouseEvent<HTMLDivElement>,
+) => {
+  pointerPositionRef.current = { x: event.clientX, y: event.clientY }
   setHoveredSources(result.sourceIds)
-}
+
+  const sourceId = getNearestSourceId(result)
+  const sourceIndex = sourceId ? getSourceIndex(sourceId) : null
+  if (sourceIndex !== null) {
+    syncListToIndex(sourceListRef, sourceIndex, 'source')
+  }
+}, [getNearestSourceId, setHoveredSources, syncListToIndex])
 ```
 
 但虚拟列表可能无法同时显示相距很远的两条来源。用于反向滚动时，应从多个 `sourceIds` 中选择距离当前左侧视口最近的一条；用于高亮和绘线时，则处理当前已经挂载的所有来源 DOM：
@@ -227,16 +261,44 @@ const setHoveredSources = (sourceIds: string[]) => {
 ```tsx
 const pointerPositionRef = useRef<{ x: number; y: number } | null>(null)
 
-const restoreHoverAtPointer = () => {
+const restoreHoverAtPointer = useCallback(() => {
   const position = pointerPositionRef.current
-  if (!position) return
+  const workspace = workspaceRef.current
+  if (!workspace || !position) return
 
   const pointedElement = document.elementFromPoint(position.x, position.y)
+  if (!(pointedElement instanceof Element)
+      || !workspace.contains(pointedElement)) return
+
   const sourceElement = pointedElement?.closest<HTMLElement>('[data-source-id]')
   const sourceId = sourceElement?.dataset.sourceId
+  if (sourceId) {
+    setHoveredSources([sourceId])
+    const resultIndex = resultIndexBySourceId.get(sourceId)
+    if (resultIndex !== undefined) {
+      syncListToIndex(resultListRef, resultIndex, 'result')
+    }
+    return
+  }
 
-  if (sourceId) handleSourceMouseEnter(sourceId)
-}
+  const resultElement = pointedElement.closest<HTMLElement>('[data-result-key]')
+  const resultKey = resultElement?.dataset.resultKey
+  const result = resultKey ? resultByKey.get(resultKey) : undefined
+  if (!result) return
+
+  setHoveredSources(result.sourceIds)
+  const nearestSourceId = getNearestSourceId(result)
+  const sourceIndex = nearestSourceId ? getSourceIndex(nearestSourceId) : null
+  if (sourceIndex !== null) {
+    syncListToIndex(sourceListRef, sourceIndex, 'source')
+  }
+}, [
+  getNearestSourceId,
+  resultByKey,
+  resultIndexBySourceId,
+  setHoveredSources,
+  syncListToIndex,
+])
 ```
 
 滚动期间立即隐藏；停止 80ms 后重新命中当前元素；命中后再等待 300ms 显示连线。鼠标离开整个工作区时清空坐标并取消任务。
@@ -262,20 +324,13 @@ const restoreHoverAtPointer = () => {
 SVG 不属于左侧列表，也不属于右侧列表，而是覆盖整个工作区：
 
 ```tsx
-<div ref={workspaceRef} className="company-match-workspace">
-  <svg className="company-match-connectors" aria-hidden="true">
-    {connectorLayer.paths.map((path) => (
-      <g key={path.id}>
-        <path className="company-match-connector__outline" d={path.d} />
-        <path className="company-match-connector__ants" d={path.d} />
-      </g>
-    ))}
-  </svg>
+<div ref={interactions.workspaceRef} className="company-match-workspace">
+  <ConnectorSvgLayer layer={interactions.connectorLayer} />
   {/* 左侧列表、中间按钮、右侧列表 */}
 </div>
 ```
 
-这样做有两个原因：一是左右端点可以使用同一个工作区坐标系，二是连线不会参与任何一侧列表的布局。SVG 使用 `pointer-events: none`，不会遮挡 hover、滚动和编辑按钮。
+`ConnectorSvgLayer` 是纯展示组件，只遍历 `layer.paths` 并输出两层 `<path>`。这样做有两个原因：一是左右端点可以使用同一个工作区坐标系，二是连线不会参与任何一侧列表的布局。SVG 使用 `pointer-events: none`，不会遮挡 hover、滚动和编辑按钮。
 
 ### 使用 Map 保存当前挂载的端点
 
@@ -285,10 +340,17 @@ SVG 不属于左侧列表，也不属于右侧列表，而是覆盖整个工作�
 const sourceItemRefs = useRef(new Map<string, HTMLDivElement>())
 const resultItemRefs = useRef(new Map<string, HTMLDivElement>())
 
-ref={(element) => {
+const registerSourceItem = useCallback((
+  sourceId: string,
+  element: HTMLDivElement | null,
+) => {
   if (element) sourceItemRefs.current.set(sourceId, element)
   else sourceItemRefs.current.delete(sourceId)
-}}
+}, [])
+
+<SourceListItem
+  itemRef={(element) => registerSourceItem(sourceId, element)}
+/>
 ```
 
 来源节点以 `sourceId` 为键；匹配成功的结果以 `company.id` 为键，未匹配结果继续使用自己的 `sourceId`。这与 React 列表的稳定 `key` 规则一致。
@@ -348,18 +410,23 @@ const d = `M ${startX} ${startY}
 实现使用 `requestAnimationFrame` 合并同一帧内的测量请求，并在 120ms 后补一次稳定测量，处理布局过渡：
 
 ```ts
-const scheduleConnectorRefresh = () => {
+const scheduleConnectorRefresh = useCallback(() => {
   scheduleConnectorUpdate()
-  connectorSettleTimerRef.current = window.setTimeout(
-    scheduleConnectorUpdate,
-    120,
-  )
-}
+  if (connectorSettleTimerRef.current !== null) {
+    window.clearTimeout(connectorSettleTimerRef.current)
+  }
+  connectorSettleTimerRef.current = window.setTimeout(() => {
+    connectorSettleTimerRef.current = null
+    scheduleConnectorUpdate()
+  }, 120)
+}, [scheduleConnectorUpdate])
 ```
 
 隐藏连线时必须同时取消等待显示的定时器、稳定测量定时器和 animation frame。否则旧回调可能在滚动后重新写入已经失效的路径。
 
 如果来源节点或结果节点不在当前虚拟窗口中，路径应立即清空，不能保留上一帧的位置。等另一侧完成联动滚动并挂载目标行后，`onRenderedRangeChange` 会重新发起测量。
+
+此外，交互 hook 使用 `ResizeObserver` 观察工作区、左侧列表面板和右侧列表，并监听左侧折叠布局的 `transitionend`。因此窗口尺寸变化或原始输入面板展开、收起以后，即使 hover 的业务 ID 没变，路径也会按新布局重新计算。
 
 ## 三、虚拟滚动时如何关联两侧匹配项
 
@@ -424,27 +491,47 @@ const end = Math.min(
 
 ### 左侧滚动如何定位右侧
 
-右侧已经按企业去重，因此左右两列长度和顺序都可能不同，不能直接复制 `scrollTop`。页面预先建立 `sourceId → resultIndex` 映射：
+右侧已经按企业去重，因此左右两列长度和顺序都可能不同，不能直接复制 `scrollTop`。`useCompanyMatchModel` 根据当前排序、过滤后的 `displayedResults` 建立 `sourceId → resultIndex` 映射：
 
 ```ts
-const resultIndexBySourceId = new Map<string, number>()
-
-displayedResults.forEach((result, resultIndex) => {
-  result.sourceIds.forEach((sourceId) => {
-    resultIndexBySourceId.set(sourceId, resultIndex)
+const resultIndexBySourceId = useMemo(() => {
+  const indexBySourceId = new Map<string, number>()
+  displayedResults.forEach((result, resultIndex) => {
+    result.sourceIds.forEach((sourceId) => {
+      indexBySourceId.set(sourceId, resultIndex)
+    })
   })
-})
+  return indexBySourceId
+}, [displayedResults])
 ```
 
-左侧滚动时，根据 `scrollTop` 和固定行高得到首个可见行的全局下标，再还原 `sourceId`，最后查询右侧结果下标：
+这里必须依赖 `displayedResults`，不能依赖原始 `matches`。用户切换“按导入顺序”或“过滤匹配失败项”后，右侧下标会变化，索引也必须同步重建。
+
+左侧滚动时，`useCompanyMatchInteractions` 根据 `scrollTop` 和固定行高得到首个可见行的全局下标，再还原 `sourceId`，最后查询右侧结果下标：
 
 ```ts
-const sourceIndex = Math.floor(offset / VIRTUAL_ROW_HEIGHT)
-const resultIndex = resultIndexBySourceId.get(`source-${sourceIndex}`)
+const handleSourceScroll = useCallback((offset: number) => {
+  const sourceIndex = Math.floor(offset / ROW_HEIGHT)
+  currentSourceScrollIndexRef.current = sourceIndex
+  if (releaseSynchronizedScroll('source', offset)) return
 
-if (resultIndex !== undefined) {
-  resultListRef.current?.scrollToIndex(resultIndex)
-}
+  clearHoveredSourcesForScroll()
+  scheduleHoverRestoreAfterScroll()
+  if (lastSourceScrollIndexRef.current === sourceIndex) return
+
+  lastSourceScrollIndexRef.current = sourceIndex
+  lastResultScrollIndexRef.current = null
+  const resultIndex = resultIndexBySourceId.get(`source-${sourceIndex}`)
+  if (resultIndex !== undefined) {
+    syncListToIndex(resultListRef, resultIndex, 'result')
+  }
+}, [
+  clearHoveredSourcesForScroll,
+  releaseSynchronizedScroll,
+  resultIndexBySourceId,
+  scheduleHoverRestoreAfterScroll,
+  syncListToIndex,
+])
 ```
 
 ### 右侧反向定位选择最近的来源
@@ -452,15 +539,18 @@ if (resultIndex !== undefined) {
 一个结果可能包含多个 `sourceIds`。固定使用 `sourceIds[0]` 会让左侧从当前区域突然跳回很早的位置。当前实现以左侧当前首个可见下标为基准，从所有来源中选择距离最近的一条：
 
 ```ts
-const nearestSourceId = result.sourceIds.reduce((nearestId, sourceId) => {
+const nearestSourceId = result.sourceIds.reduce<string | undefined>((nearestId, sourceId) => {
   const sourceIndex = getSourceIndex(sourceId)
-  const nearestIndex = getSourceIndex(nearestId)
+  if (sourceIndex === null) return nearestId
+  if (!nearestId) return sourceId
 
-  return Math.abs(sourceIndex - currentSourceIndex)
-    < Math.abs(nearestIndex - currentSourceIndex)
+  const nearestIndex = getSourceIndex(nearestId)
+  return nearestIndex === null
+    || Math.abs(sourceIndex - currentSourceIndex)
+      < Math.abs(nearestIndex - currentSourceIndex)
     ? sourceId
     : nearestId
-})
+}, undefined)
 ```
 
 因此，页面后半段的“腾讯”与页面开头的“腾讯”命中同一家企业时，从右侧反向定位会回到当前视口附近的来源，而不是永远回到第一条。
@@ -469,14 +559,39 @@ const nearestSourceId = result.sourceIds.reduce((nearestId, sourceId) => {
 
 调用 `scrollToIndex` 会触发目标列表的 `scroll` 事件。如果目标列表继续反向同步，两个列表会互相修改位置，出现抖动甚至回到开头。
 
-容器使用两个 ref 标记本次程序化滚动的目标和预期偏移：
+交互 hook 使用两个 ref 标记本次程序化滚动的目标和预期偏移：
 
 ```ts
 syncingScrollTargetRef.current = 'result'
 syncingScrollOffsetRef.current = resultListRef.current?.scrollToIndex(index)
 ```
 
-目标列表收到与预期一致的滚动事件时，只释放锁和刷新连线，不再回传。若不加这个判断，左侧推动右侧，右侧又立刻推动左侧，两个列表会来回修正位置。
+目标列表收到与预期一致的滚动事件时，只释放锁和刷新连线，不再回传。当前代码把这个判断收敛在 `releaseSynchronizedScroll` 中，两侧滚动处理器共用同一套规则：
+
+```ts
+const releaseSynchronizedScroll = useCallback((
+  target: 'source' | 'result',
+  offset: number,
+) => {
+  if (syncingScrollTargetRef.current !== target) return false
+
+  const expectedOffset = syncingScrollOffsetRef.current
+  syncingScrollTargetRef.current = null
+  syncingScrollOffsetRef.current = null
+  if (releaseScrollSyncTimerRef.current !== null) {
+    window.clearTimeout(releaseScrollSyncTimerRef.current)
+    releaseScrollSyncTimerRef.current = null
+  }
+
+  if (expectedOffset === null || Math.abs(offset - expectedOffset) < 1) {
+    scheduleConnectorRefresh()
+    return true
+  }
+  return false
+}, [scheduleConnectorRefresh])
+```
+
+若不加这个判断，左侧推动右侧，右侧又立刻推动左侧，两个列表会来回修正位置。
 
 若实际偏移与预期不同，说明用户在程序化滚动期间主动操作了列表，此时立即释放锁，并把事件按用户滚动处理。
 
@@ -493,18 +608,125 @@ syncingScrollOffsetRef.current = resultListRef.current?.scrollToIndex(index)
 
 虚拟列表从有数据变为空，再恢复数据时，滚动容器不会卸载。`useLayoutEffect` 会把 DOM 的 `scrollTop` 和 React 内部状态一起限制到新的最大偏移，避免恢复后仍按旧位置渲染空窗口。
 
-## 四、组件如何解耦，以及如何通信
+## 四、组件和 hooks 如何解耦，以及如何通信
 
-### 原理：列表负责“怎么滚”，容器负责“滚到哪里”
+### 原理：先按变化原因拆分，再按数据流组合
 
-如果把业务匹配关系写进 `VirtualList`，它就只能用于公司匹配；如果让左右列表互相持有对方 ref，两侧会形成循环依赖；如果让 SVG 自己查询所有 DOM，它又会开始理解业务数据。
+这个页面有三类变化原因：企业数据和匹配规则会变化，hover、滚动和连线策略会变化，页面布局也会变化。如果都放在 `CompanyMatchDemo.tsx` 中，修改任何一类功能都要进入同一个大组件，业务状态、DOM ref、定时器和 JSX 也会互相干扰。
 
-当前设计给每层划定了边界：
+现在的结构把它们拆成三个层次：
 
-- 数据模块回答“哪些来源属于同一结果”；
-- `VirtualList` 回答“给定数据和偏移，应渲染哪些行”；
-- 页面容器回答“用户操作一侧时，另一侧应该定位到哪条数据”；
-- SVG 层回答“两个已经挂载的元素应该怎样连接”。
+```text
+CompanyMatchDemo.tsx
+  ├─ useCompanyMatchModel            匹配数据与结果视图模型
+  ├─ useCompanyMatchInteractions     双列表 hover、滚动与连线
+  └─ 展示组件
+       ├─ VirtualList
+       ├─ SourceListItem / ResultListItem
+       ├─ ConnectorSvgLayer
+       └─ MatchOutputDrawer
+```
+
+`CompanyMatchDemo.tsx` 不再保存企业匹配细节，也不再直接管理 animation frame、延迟任务和 DOM Map。它只调用两个 hook，把返回的数据和事件处理器连接到展示组件。
+
+### 数据模型 hook：只处理“页面要展示什么”
+
+`useCompanyMatchModel` 管理输入、逐条匹配、人工纠错、去重、排序、过滤和输出抽屉状态。它根据原始 state 派生出 `displayedResults`、`resultIndexBySourceId` 和 `resultByKey`，但不读取 DOM，也不知道列表当前滚到了哪里。
+
+页面使用时不需要重复理解这些派生关系：
+
+```tsx
+const model = useCompanyMatchModel()
+
+<VirtualList
+  items={model.displayedResults}
+  getKey={getResultKey}
+  renderItem={(result) => (
+    <ResultListItem result={result} />
+  )}
+/>
+```
+
+输入改变时需要同时清空旧匹配结果、编辑状态和耗时；人工匹配后需要更新指定来源并关闭编辑面板。这些更新顺序都属于数据模型，收进 hook 后，页面不会遗漏其中一步。
+
+右侧展示结果也在模型 hook 中统一派生。先按企业 ID 去重，再应用“过滤匹配失败项”，最后根据“按导入顺序”决定是否把未匹配结果置顶：
+
+```ts
+const displayedResults = useMemo(() => {
+  const results = deduplicateCompanyMatches(matches, {
+    includeUnmatched: true,
+  })
+  const filteredResults = hideUnmatchedResults
+    ? results.filter((result) => result.company)
+    : results
+
+  if (keepImportOrder) return filteredResults
+
+  return [...filteredResults].sort((left, right) =>
+    Number(Boolean(left.company)) - Number(Boolean(right.company)),
+  )
+}, [hideUnmatchedResults, keepImportOrder, matches])
+```
+
+组件和交互 hook 都只读取同一个 `displayedResults`。这样过滤至空、恢复过滤或人工确认后重新排序时，不会出现“页面显示一种顺序，滚动索引仍使用另一种顺序”的情况。
+
+匹配操作本身也由模型 hook 暴露为命令。计时只覆盖 `matchAll`，React 状态更新放进 transition，避免把渲染耗时混入匹配耗时：
+
+```ts
+const handleMatch = () => {
+  const startedAt = performance.now()
+  const nextMatches = companyMatcher.matchAll(sourceNames, COMPANY_DIRECTORY)
+  const duration = performance.now() - startedAt
+
+  startTransition(() => {
+    setMatches(nextMatches)
+    setMatchDuration(duration)
+  })
+}
+```
+
+### 交互 hook：只处理“用户操作后两侧怎样联动”
+
+`useCompanyMatchInteractions` 接收已经整理好的结果和索引：
+
+```tsx
+const interactions = useCompanyMatchInteractions({
+  displayedResults: model.displayedResults,
+  resultIndexBySourceId: model.resultIndexBySourceId,
+  resultByKey: model.resultByKey,
+  hasResult: model.hasResult,
+  isSourceInputCollapsed,
+  onRenderedSourceCountChange: setRenderedSourceCount,
+  onRenderedResultCountChange: setRenderedResultCount,
+})
+```
+
+它负责以下内容：
+
+- 保存 `activeSourceIds`，驱动两侧高亮；
+- 登记当前虚拟窗口中的来源和结果 DOM；
+- 通过受限 ref 让另一侧列表滚到业务相关项；
+- 用同步锁阻止程序化滚动反向回传；
+- 滚动时隐藏连线，并在鼠标静止时重新识别 hover；
+- 调度 SVG 端点测量、延迟显示和失效清理。
+
+这个 hook 不执行公司匹配，也不修改企业结果。它只消费稳定 ID、结果索引和已挂载 DOM，因此更换匹配算法不会影响滚动与连线。
+
+### 无副作用工具：让两个 hook 共用同一种键
+
+`companyMatchViewModel.ts` 放置输入解析、结果键和来源下标解析等纯函数：
+
+```ts
+export const getResultKey = (result: DeduplicatedCompanyMatch) =>
+  result.company?.id ?? result.sourceId
+
+export const getSourceIndex = (sourceId: string) => {
+  const match = /^source-(\d+)$/.exec(sourceId)
+  return match ? Number(match[1]) : null
+}
+```
+
+数据模型用 `getResultKey` 建立 `resultByKey`，交互 hook 用同一个函数登记和查找 DOM，虚拟列表也用它作为 React key。键规则只有一个来源，后续调整未匹配项的键格式时不会出现数据索引和 DOM Map 不一致。
 
 ### 按职责分层
 
@@ -512,37 +734,40 @@ syncingScrollOffsetRef.current = resultListRef.current?.scrollToIndex(index)
 | --- | --- | --- |
 | `companyData.ts` | 企业目录、Logo、简称和模型样本 | 页面滚动与 hover |
 | `deduplicateMatches.ts` | 按企业 ID 聚合结果并保留来源 | 列表如何展示 |
-| `performanceData.ts` | 生成稳定的大数据测试输入 | 匹配页面状态 |
-| `VirtualList.tsx` | 计算虚拟窗口并提供滚动能力 | 具体业务字段 |
-| `CompanyMatchDemo.tsx` | 组合业务数据、列表状态和交互协调 | 数据的生成方式 |
-
-去重器和测试数据生成器是独立的数据处理模块，可以单独测试。`VirtualList` 是通用基础组件，可以复用到联系人、专利等固定行高列表。页面容器只负责把这些能力组合起来。
+| `useCompanyMatchModel.ts` | 管理输入、匹配、过滤和结果索引 | DOM、滚动位置和 SVG 坐标 |
+| `useCompanyMatchInteractions.ts` | 管理高亮、双向滚动、DOM 登记和连线调度 | 企业如何完成匹配 |
+| `companyMatchViewModel.ts` | 提供稳定键和解析纯函数 | React 状态和组件生命周期 |
+| `VirtualList.tsx` | 计算虚拟窗口并提供滚动能力 | 具体业务字段和另一侧列表 |
+| `ConnectorSvgLayer.tsx` | 渲染已经计算好的 SVG 路径 | 端点怎样选择和测量 |
+| `CompanyMatchDemo.tsx` | 连接 hooks 与展示组件，描述页面布局 | 匹配和滚动算法的内部步骤 |
 
 ### 用一次左侧 hover 看清通信过程
 
 一次完整通信按照下面的顺序发生：
 
 ```text
-左侧行触发 mouseenter(sourceId)
+SourceListItem 触发 mouseenter(sourceId)
   ↓ callback
-页面容器查询 resultIndexBySourceId
-  ↓ imperative ref
+useCompanyMatchInteractions 查询 resultIndexBySourceId
+  ↓ VirtualListHandle
 右侧 VirtualList.scrollToIndex(resultIndex)
   ↓ React 渲染
-右侧虚拟窗口挂载目标行
+ResultListItem 挂载，并把 DOM 登记到交互 hook
   ↓ onRenderedRangeChange callback
-页面容器从 DOM Map 读取两端并刷新 SVG
+交互 hook 测量两端，生成 ConnectorLayer
+  ↓ props
+ConnectorSvgLayer 渲染路径
 ```
 
-这个流程里，左侧行不知道右侧列表的存在；`VirtualList` 不知道滚动目标是一家公司；SVG 也不负责决定哪两条数据相关。所有跨模块决策都集中在页面容器中。
+这个流程里，左侧行不知道右侧列表的存在；`VirtualList` 不知道滚动目标是一家公司；SVG 组件也不负责判断哪两条数据相关。跨列表决策集中在交互 hook，而不是散落在两个列表项或页面 JSX 中。
 
-### 组件之间使用四种明确的通信方式
+### 模块之间使用四种明确的通信方式
 
 #### 1. Props 传递数据和渲染函数
 
-容器把 `items`、`itemHeight`、`getKey` 和 `renderItem` 交给虚拟列表。虚拟列表不读取外部业务状态，也不导入企业类型。
+页面把 `items`、`itemHeight`、`getKey` 和 `renderItem` 交给虚拟列表。虚拟列表不读取外部业务状态，也不导入企业类型。`ConnectorSvgLayer` 同样只接收 `ConnectorLayer`，不会主动查询 DOM。
 
-#### 2. Callback 把事件交还容器
+#### 2. Callback 把事件交给交互 hook
 
 虚拟列表通过两个回调报告变化：
 
@@ -551,11 +776,20 @@ onScrollOffset?: (offset: number) => void
 onRenderedRangeChange?: (count: number) => void
 ```
 
-`onScrollOffset` 用于两侧关联滚动；`onRenderedRangeChange` 表示虚拟窗口已经换行，容器可以重新测量 SVG 端点。列表组件不直接操作另一侧列表。
+页面只做绑定：
+
+```tsx
+<VirtualList
+  onScrollOffset={interactions.handleSourceScroll}
+  onRenderedRangeChange={interactions.handleSourceRenderedRangeChange}
+/>
+```
+
+`onScrollOffset` 驱动关联滚动；`onRenderedRangeChange` 表示虚拟窗口已经换行，可以重新测量 SVG 端点。列表组件不直接操作另一侧列表。
 
 #### 3. 受限的 imperative ref 提供定位能力
 
-容器只通过 `VirtualListHandle` 请求滚动：
+交互 hook 只通过 `VirtualListHandle` 请求滚动：
 
 ```ts
 export interface VirtualListHandle {
@@ -568,13 +802,13 @@ export interface VirtualListHandle {
 
 #### 4. 稳定 ID 连接业务状态和当前 DOM
 
-React 状态只保存 `sourceId`，不保存 DOM。SVG 绘制层再通过 `sourceItemRefs` 和 `resultItemRefs` 查找当前已挂载节点。这样业务关系不会依赖虚拟列表当前复用了哪个 DOM 位置。
+React state 只保存 `sourceId`，不保存 DOM。交互 hook 通过 `sourceItemRefs` 和 `resultItemRefs` 查找当前已挂载节点，再把普通路径数据交给 SVG 组件。这样业务关系不会依赖虚拟列表当前复用了哪个 DOM 位置。
 
-整个页面不需要全局事件总线。数据向下通过 props，交互向上通过 callback，必要的滚动命令通过受限 ref 发出，跨列表关系通过稳定 ID 解析。每一层都只知道完成自身职责所需的最少信息。
+整个页面不需要 Context 或全局事件总线。数据模型 hook 向页面提供视图数据，事件通过 callback 进入交互 hook，必要的滚动命令通过受限 ref 发出，展示组件只消费 props。新增匹配策略时修改模型层，调整滚动与连线时修改交互层，替换视觉样式时修改展示组件，彼此不需要同步重写。
 
 ## 人工纠错与最终输出
 
-自动匹配失败后，原始词条仍然保留。右侧未匹配项显示警告状态和编辑按钮，候选面板支持按企业名称、简称和地区搜索。人工选择只更新对应的 `CompanyMatch`：
+自动匹配失败后，原始词条仍然保留。右侧未匹配项显示警告状态和编辑按钮，候选面板支持按企业名称、简称和地区搜索。`ResultListItem` 通过 `onManualMatch` 把用户选择的企业交回页面，页面再调用模型 hook 的 `handleManualMatch`。真正的数据更新仍封装在 `useCompanyMatchModel` 内，只替换对应的 `CompanyMatch`：
 
 ```ts
 setMatches((current) =>
@@ -592,7 +826,9 @@ setMatches((current) =>
 )
 ```
 
-最终输出使用去重后的匹配结果，未匹配项不进入名单，但会显示跳过数量。结果抽屉使用 Ant Design Table 的虚拟滚动，避免主页面完成优化后又在输出阶段一次性创建大量行。
+更新完成后，`matches` 会重新派生 `displayedResults`、`resultIndexBySourceId` 和 `resultByKey`。人工确认项可能从“待处理置顶区域”移动到已匹配区域，因此交互 hook 监听 `displayedResults` 变化，并清除旧的滚动同步目标，避免继续使用旧下标。
+
+最终输出使用模型 hook 提供的 `uniqueMatchedResults`，未匹配项不进入名单，但会显示跳过数量。结果抽屉使用 Ant Design Table 的虚拟滚动，避免主页面完成优化后又在输出阶段一次性创建大量行。
 
 ## 示例数据
 
@@ -683,7 +919,7 @@ export function createPerformanceCompanyNames(count: number): string[] {
 
 ## 回归测试
 
-当前组件测试覆盖了三个容易反复出现的问题：
+当前组件测试仍从 `CompanyMatchDemoPage` 的用户行为入口执行，不直接调用两个 hook。这样重构内部职责以后，测试验证的仍然是完整通信链路，而不是某个实现细节。它覆盖了三个容易反复出现的问题：
 
 - 滚动时连线立即隐藏，鼠标不动时按滚动后的当前词条恢复；
 - 多个来源匹配同一结果时，从右侧反向定位到当前视口最近的来源；
@@ -692,8 +928,10 @@ export function createPerformanceCompanyNames(count: number): string[] {
 运行测试：
 
 ```bash
-pnpm test
+pnpm --filter @workspace/web test -- CompanyMatchDemo.test.tsx
 ```
+
+测试使用 fake timers 推进 80ms 的 hover 恢复、300ms 的连线显示和后续稳定测量，并为工作区、来源行和结果行提供固定的 `getBoundingClientRect()`。因此断言可以直接检查蚂蚁线路径是否出现，而不依赖真实浏览器布局。
 
 ## 五、公司头像如何实现
 
@@ -740,7 +978,7 @@ pnpm test
 1. 用 `sourceId` 和 `company.id` 表达关联，不用文本和 DOM 位置推断关系；
 2. hover 状态只保存来源 ID，SVG 只读取当前已挂载节点；
 3. 双侧滚动按数据映射换算下标，并使用同步锁阻止循环；
-4. 数据处理、虚拟列表和页面协调器分别承担单一职责。
+4. 数据模型 hook、交互 hook、虚拟列表和展示组件分别承担单一职责。
 
 在这些边界不变的情况下，可以继续增加新的匹配策略、动态数据源或更复杂的结果组件，而不需要推翻高亮、连线和虚拟滚动机制。
 
