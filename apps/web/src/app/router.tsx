@@ -140,4 +140,7 @@ export const router = createBrowserRouter([
       { path: '*', element: <NotFoundPage /> },
     ],
   },
-])
+], {
+  // 使用 Vite 的 base 作为 basename,使应用在 GitHub Pages 等子路径部署时路由正常工作
+  basename: import.meta.env.BASE_URL,
+})
