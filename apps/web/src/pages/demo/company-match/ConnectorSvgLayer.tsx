@@ -17,7 +17,7 @@ export interface ConnectorSvgLayerProps {
  * 两侧虚拟列表之间的连线绘图层：纯展示组件，只读取已经算好的路径数据。
  *
  * 连线本身是两个 DOM 元素中心点换算出的几何路径，测量和防抖调度都在
- * CompanyMatchDemo 中完成，这里只负责把路径画出来，避免把定位逻辑和
+ * useCompanyMatchInteractions 中完成，这里只负责把路径画出来，避免把定位逻辑和
  * SVG 渲染耦合在一起。
  */
 export function ConnectorSvgLayer({ layer }: ConnectorSvgLayerProps) {
