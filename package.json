@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter @workspace/web dev",
     "build": "pnpm --filter @workspace/web build",
+    "test": "pnpm --filter @workspace/web test",
     "preview": "pnpm --filter @workspace/web preview",
     "storybook": "pnpm --filter @workspace/storybook storybook",
     "build-storybook": "pnpm --filter @workspace/storybook build-storybook",

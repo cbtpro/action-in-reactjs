@@ -10,6 +10,7 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import DemoPage from '@/pages/demo/Index'
 import PermissionDemoPage from '@/pages/demo/PermissionDemo'
 import ImeFormDemoPage from '@/pages/demo/ImeFormDemo'
+import CompanyMatchDemoPage from '@/pages/demo/company-match/CompanyMatchDemo'
 
 /**
  * 面包屑单个项 —— 支持标题和可选的跳转路径
@@ -85,6 +86,11 @@ export const router = createBrowserRouter([
             path: 'ime-form',
             element: <ImeFormDemoPage />,
             handle: { breadcrumb: 'IME 表单校验', title: 'IME 表单校验' } satisfies RouteHandle,
+          },
+          {
+            path: 'company-match',
+            element: <CompanyMatchDemoPage />,
+            handle: { breadcrumb: '批量匹配公司', title: '批量匹配公司' } satisfies RouteHandle,
           },
         ],
       },

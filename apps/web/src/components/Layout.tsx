@@ -14,6 +14,8 @@ import {
   MoonOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
 } from '@ant-design/icons'
 import { useSettings } from '@/contexts/SettingsContext'
 import TabBar from '@/components/TabBar'
@@ -41,6 +43,7 @@ const MENU_ITEMS: MenuProps['items'] = [
       { key: '/demo', label: '演示首页' },
       { key: '/demo/permission', label: '权限演示' },
       { key: '/demo/ime-form', label: 'IME 表单校验' },
+      { key: '/demo/company-match', label: '批量匹配公司' },
     ],
   },
   { key: '/charts', icon: <BarChartOutlined />, label: '图表' },
@@ -106,6 +109,9 @@ export default function Layout() {
   const navigate = useNavigate()
 
   const [collapsed, setCollapsed] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(
+    () => Boolean(document.fullscreenElement),
+  )
   const [actions, setActions] = useState<ReactNode>(null)
   const [openKeys, setOpenKeys] = useState<string[]>(() =>
     getMenuOpenKeys(location.pathname),
@@ -125,6 +131,29 @@ export default function Layout() {
       })
     }
   }, [location.pathname])
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement))
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+        return
+      }
+
+      await document.documentElement.requestFullscreen()
+    } catch {
+      // 浏览器策略拒绝全屏时保持当前状态，避免产生未处理的 Promise。
+      setIsFullscreen(Boolean(document.fullscreenElement))
+    }
+  }
 
   return (
     <AntdLayout className="app-layout" hasSider>
@@ -167,6 +196,14 @@ export default function Layout() {
             <TabBar />
           </div>
           <div className="app-header__right">
+            <Tooltip title={isFullscreen ? '退出全屏' : '进入全屏'}>
+              <Button
+                type="text"
+                icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+                onClick={() => void toggleFullscreen()}
+                aria-label={isFullscreen ? '退出全屏' : '进入全屏'}
+              />
+            </Tooltip>
             <Tooltip title={isDark ? '切换到亮色主题' : '切换到暗色主题'}>
               <Button
                 type="text"

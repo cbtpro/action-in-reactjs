@@ -30,3 +30,7 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## Articles
+
+- [用 React 实现一个支持万条数据的批量公司匹配工具](docs/building-a-batch-company-matcher-with-react.md)
