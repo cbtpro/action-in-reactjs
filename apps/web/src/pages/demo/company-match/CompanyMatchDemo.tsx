@@ -10,33 +10,23 @@ import {
 import type { RefObject } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import {
-  Alert,
   Badge,
   Button,
   Checkbox,
-  Drawer,
   Empty,
   Input,
-  Popover,
   Progress,
   Space,
   Steps,
-  Table,
   Tag,
   Tooltip,
   Typography,
 } from 'antd'
-import type { ColumnsType } from 'antd/es/table/interface'
 import {
   ArrowRightOutlined,
-  CheckCircleFilled,
-  EditOutlined,
   FileSearchOutlined,
-  SearchOutlined,
-  ExperimentOutlined,
   LeftOutlined,
   RightOutlined,
-  WarningFilled,
 } from '@ant-design/icons'
 import { COMPANY_DIRECTORY, MODEL_MATCH_TEST_NAMES } from './companyData'
 import { companyMatcher } from './matcher'
@@ -46,9 +36,16 @@ import type { VirtualListHandle } from './VirtualList'
 import { createPerformanceCompanyNames } from './performanceData'
 import { deduplicateCompanyMatches } from './deduplicateMatches'
 import type { DeduplicatedCompanyMatch } from './deduplicateMatches'
+import { CompanyMatchHero } from './CompanyMatchHero'
+import { VirtualListBenchmark } from './VirtualListBenchmark'
+import { ConnectorSvgLayer } from './ConnectorSvgLayer'
+import type { ConnectorLayer } from './ConnectorSvgLayer'
+import { SourceListItem } from './SourceListItem'
+import { ResultListItem } from './ResultListItem'
+import { MatchOutputDrawer } from './MatchOutputDrawer'
 import './company-match.css'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 const VIRTUAL_LIST_HEIGHT = 460
 const VIRTUAL_ROW_HEIGHT = 84
 const DEFAULT_INPUT = [
@@ -62,79 +59,12 @@ const parseCompanyNames = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean)
 
-const MATCH_KIND_LABEL: Record<CompanyMatch['kind'], string> = {
-  exact: '全称命中',
-  alias: '简称命中',
-  normalized: '智能命中',
-  manual: '人工匹配',
-  unmatched: '未匹配',
-}
-
-interface CandidatePickerProps {
-  sourceName: string
-  onSelect: (company: Company) => void
-}
-
-interface ConnectorPath {
-  id: string
-  d: string
-}
-
-interface ConnectorLayer {
-  width: number
-  height: number
-  paths: ConnectorPath[]
-}
-
 const getResultKey = (result: DeduplicatedCompanyMatch) =>
   result.company?.id ?? result.sourceId
 
 const getSourceIndex = (sourceId: string) => {
   const match = /^source-(\d+)$/.exec(sourceId)
   return match ? Number(match[1]) : null
-}
-
-function CandidatePicker({ sourceName, onSelect }: CandidatePickerProps) {
-  const [keyword, setKeyword] = useState('')
-  const candidates = useMemo(() => {
-    const normalized = keyword.trim().toLocaleLowerCase()
-    if (!normalized) return COMPANY_DIRECTORY
-    return COMPANY_DIRECTORY.filter((company) =>
-      [company.name, ...company.aliases, company.region]
-        .join(' ')
-        .toLocaleLowerCase()
-        .includes(normalized),
-    )
-  }, [keyword])
-
-  return (
-    <div className="company-picker">
-      <div className="company-picker__title">为“{sourceName}”选择企业</div>
-      <Input
-        autoFocus
-        allowClear
-        prefix={<SearchOutlined />}
-        placeholder="搜索企业名称、简称或地区"
-        value={keyword}
-        onChange={(event) => setKeyword(event.target.value)}
-      />
-      <div className="company-picker__list">
-        {candidates.length ? candidates.map((company) => (
-          <button
-            key={company.id}
-            type="button"
-            className="company-picker__option"
-            onClick={() => onSelect(company)}
-          >
-            <span className="company-picker__option-name">{company.name}</span>
-            <span>{company.region} · {company.industry}</span>
-          </button>
-        )) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有候选企业" />
-        )}
-      </div>
-    </div>
-  )
 }
 
 export default function CompanyMatchDemoPage() {
@@ -619,51 +549,14 @@ export default function CompanyMatchDemoPage() {
     setEditingSourceId(null)
   }
 
-  const outputColumns: ColumnsType<DeduplicatedCompanyMatch> = [
-    {
-      title: '原始词条来源',
-      width: 240,
-      render: (_, record) => (
-        <Space size={6} wrap>
-          <span>{record.sourceNames.slice(0, 2).join('、')}{record.sourceNames.length > 2 ? ' 等' : ''}</span>
-          {record.sourceCount > 1 && <Tag>合并 {record.sourceCount} 条</Tag>}
-        </Space>
-      ),
-    },
-    {
-      title: '匹配企业',
-      render: (_, record) => record.company?.name,
-    },
-    {
-      title: '地区',
-      width: 130,
-      render: (_, record) => record.company?.region,
-    },
-    {
-      title: '统一社会信用代码',
-      width: 190,
-      render: (_, record) => record.company?.creditCode,
-    },
-    {
-      title: '匹配方式',
-      width: 110,
-      render: (_, record) => <Tag color={record.kind === 'manual' ? 'purple' : 'blue'}>{MATCH_KIND_LABEL[record.kind]}</Tag>,
-    },
-  ]
-
   return (
     <section className="company-match-page">
-      <header className="company-match-hero">
-        <div>
-          <Title level={2}>批量匹配公司</Title>
-          <Text type="secondary">粘贴企业名单，自动校准为工商企业全称，人工处理未命中项后统一输出。</Text>
-        </div>
-        <div className="company-match-hero__summary">
-          <div><strong>{sourceNames.length}</strong><span>待处理</span></div>
-          <div><strong>{matchedCount}</strong><span>已匹配</span></div>
-          <div className={unmatchedCount > 0 ? 'has-warning' : ''}><strong>{hasResult ? unmatchedCount : 0}</strong><span>待确认</span></div>
-        </div>
-      </header>
+      <CompanyMatchHero
+        pendingCount={sourceNames.length}
+        matchedCount={matchedCount}
+        hasResult={hasResult}
+        unmatchedCount={unmatchedCount}
+      />
 
       <Steps
         className="company-match-steps"
@@ -675,24 +568,13 @@ export default function CompanyMatchDemoPage() {
         ]}
       />
 
-      <div className="company-match-benchmark">
-        <div className="company-match-benchmark__intro">
-          <ExperimentOutlined />
-          <div>
-            <strong>虚拟列表性能验证</strong>
-            <span>生成大批量数据，列表始终只渲染视口附近约 20 行</span>
-          </div>
-        </div>
-        <Space wrap>
-          <Button onClick={() => handleCreateTestData(1000)}>载入 1,000 条</Button>
-          <Button onClick={() => handleCreateTestData(10000)}>载入 10,000 条</Button>
-          {matchDuration !== null && (
-            <Tag color="processing">匹配耗时 {matchDuration.toFixed(1)} ms</Tag>
-          )}
-          {hasResult && <Tag color="success">去重后 {uniqueMatchedResults.length} 家</Tag>}
-          <Tag>单列 DOM 行数 {Math.max(renderedSourceCount, renderedResultCount)}</Tag>
-        </Space>
-      </div>
+      <VirtualListBenchmark
+        onCreateTestData={handleCreateTestData}
+        matchDuration={matchDuration}
+        hasResult={hasResult}
+        uniqueMatchedCount={uniqueMatchedResults.length}
+        renderedRowCount={Math.max(renderedSourceCount, renderedResultCount)}
+      />
 
       <div
         ref={workspaceRef}
@@ -709,19 +591,7 @@ export default function CompanyMatchDemoPage() {
           setHoveredSources([])
         }}
       >
-        <svg
-          className="company-match-connectors"
-          viewBox={`0 0 ${connectorLayer.width} ${connectorLayer.height}`}
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          {connectorLayer.paths.map((path) => (
-            <g key={path.id}>
-              <path className="company-match-connector__outline" d={path.d} />
-              <path className="company-match-connector__ants" d={path.d} />
-            </g>
-          ))}
-        </svg>
+        <ConnectorSvgLayer layer={connectorLayer} />
         <section className="company-match-panel company-match-panel--source">
           <div className="company-match-panel__header">
             <div>
@@ -774,13 +644,16 @@ export default function CompanyMatchDemoPage() {
                   const result = matches[index]
                   const isActive = activeSourceIds.includes(sourceId)
                   return (
-                    <div
-                      ref={(element) => {
+                    <SourceListItem
+                      name={name}
+                      index={index}
+                      sourceId={sourceId}
+                      result={result}
+                      isActive={isActive}
+                      itemRef={(element) => {
                         if (element) sourceItemRefs.current.set(sourceId, element)
                         else sourceItemRefs.current.delete(sourceId)
                       }}
-                      data-source-id={sourceId}
-                      className={`company-source-item${isActive ? ' is-active' : ''}${result?.kind === 'unmatched' ? ' is-unmatched' : ''}`}
                       onMouseEnter={(event) => {
                         pointerPositionRef.current = {
                           x: event.clientX,
@@ -789,17 +662,7 @@ export default function CompanyMatchDemoPage() {
                         handleSourceMouseEnter(sourceId)
                       }}
                       onMouseLeave={() => setHoveredSources([])}
-                    >
-                      <span className="company-source-item__number">{String(index + 1).padStart(2, '0')}</span>
-                      <span className="company-source-item__name">{name}</span>
-                      {result && (
-                        <span className={`company-source-item__confidence${result.company ? '' : ' is-unmatched'}`}>
-                          {Math.round(result.confidence * 100)}%
-                        </span>
-                      )}
-                      {result?.company && <CheckCircleFilled className="company-source-item__check" />}
-                      {result?.kind === 'unmatched' && <WarningFilled className="company-source-item__warning" />}
-                    </div>
+                    />
                   )
                 }}
               />
@@ -879,17 +742,16 @@ export default function CompanyMatchDemoPage() {
               onScrollOffset={handleResultScroll}
               renderItem={(result) => {
                 const isActive = result.sourceIds.some((sourceId) => activeSourceIds.includes(sourceId))
-                const unmatched = !result.company
-                const shortName = result.company?.shortName ?? ''
                 return (
-                  <div
-                    ref={(element) => {
+                  <ResultListItem
+                    result={result}
+                    isActive={isActive}
+                    isEditing={editingSourceId === result.sourceId}
+                    itemRef={(element) => {
                       const resultKey = getResultKey(result)
                       if (element) resultItemRefs.current.set(resultKey, element)
                       else resultItemRefs.current.delete(resultKey)
                     }}
-                    data-result-key={getResultKey(result)}
-                    className={`company-result-item${isActive ? ' is-active' : ''}${unmatched ? ' is-unmatched' : ''}`}
                     onMouseEnter={(event) => {
                       pointerPositionRef.current = {
                         x: event.clientX,
@@ -898,80 +760,9 @@ export default function CompanyMatchDemoPage() {
                       handleResultMouseEnter(result)
                     }}
                     onMouseLeave={() => setHoveredSources([])}
-                  >
-                    <div className="company-result-item__status">
-                      {unmatched ? (
-                        <WarningFilled />
-                      ) : result.company?.logo.src ? (
-                        <img
-                          className="company-result-item__logo"
-                          src={result.company.logo.src}
-                          alt={`${result.company.name} Logo`}
-                        />
-                      ) : (
-                        <span
-                          className="company-result-item__logo"
-                          style={{
-                            background: result.company?.logo.background,
-                            color: result.company?.logo.foreground,
-                          }}
-                          role="img"
-                          aria-label={`${result.company?.name} Logo`}
-                        >
-                          {shortName.length > 2 ? (
-                            <>
-                              <span className="company-result-item__logo-line">
-                                {shortName.slice(0, 2)}
-                              </span>
-                              <span className="company-result-item__logo-line">
-                                {shortName.slice(2)}
-                              </span>
-                            </>
-                          ) : shortName}
-                        </span>
-                      )}
-                    </div>
-                    <div className="company-result-item__content">
-                      <span className="company-result-item__source">
-                        {result.sourceCount > 1 ? `${result.sourceCount} 个词条：` : ''}
-                        {result.sourceNames.join('、')}
-                      </span>
-                      {result.company ? (
-                        <div className="company-result-item__company">
-                          <strong>{result.company.name}</strong>
-                          <span>{result.company.region} · {result.strategyLabel} · {Math.round(result.confidence * 100)}%</span>
-                        </div>
-                      ) : (
-                        <div className="company-result-item__company company-result-item__company--missing">
-                          <strong>未找到匹配企业</strong>
-                          <span>请人工选择正确的工商主体</span>
-                        </div>
-                      )}
-                    </div>
-                    {unmatched && (
-                      <Popover
-                        trigger="click"
-                        placement="bottomRight"
-                        open={editingSourceId === result.sourceId}
-                        onOpenChange={(open) => setEditingSourceId(open ? result.sourceId : null)}
-                        content={
-                          <CandidatePicker
-                            sourceName={result.sourceName}
-                            onSelect={(company) => handleManualMatch(result.sourceId, company)}
-                          />
-                        }
-                      >
-                        <Tooltip title="选择匹配企业">
-                          <Button
-                            className="company-result-item__edit"
-                            type="text"
-                            icon={<EditOutlined />}
-                            aria-label={`编辑 ${result.sourceName} 的匹配企业`}
-                          />
-                        </Tooltip>
-                      </Popover>
-                    )}
-                  </div>
+                    onEditOpenChange={(open) => setEditingSourceId(open ? result.sourceId : null)}
+                    onManualMatch={(company) => handleManualMatch(result.sourceId, company)}
+                  />
                 )
               }}
             />
@@ -997,39 +788,13 @@ export default function CompanyMatchDemoPage() {
         </Space>
       </footer>
 
-      <Drawer
-        size={920}
+      <MatchOutputDrawer
         open={resultOpen}
         onClose={() => setResultOpen(false)}
-        title="标准企业名单（已去重）"
-        extra={<Tag color="success">{uniqueMatchedResults.length} 家企业</Tag>}
-      >
-        {duplicateCount > 0 && (
-          <Alert
-            showIcon
-            type="success"
-            title={`已按企业 ID 合并 ${duplicateCount} 条重复匹配结果`}
-            style={{ marginBottom: 16 }}
-          />
-        )}
-        {unmatchedCount > 0 && (
-          <Alert
-            showIcon
-            type="warning"
-            title={`${unmatchedCount} 个未匹配词条已跳过，可返回继续人工匹配`}
-            style={{ marginBottom: 16 }}
-          />
-        )}
-        <Table<DeduplicatedCompanyMatch>
-          rowKey="sourceId"
-          size="middle"
-          pagination={false}
-          columns={outputColumns}
-          dataSource={uniqueMatchedResults}
-          virtual
-          scroll={{ x: 850, y: 620 }}
-        />
-      </Drawer>
+        uniqueMatchedResults={uniqueMatchedResults}
+        duplicateCount={duplicateCount}
+        unmatchedCount={unmatchedCount}
+      />
     </section>
   )
 }
