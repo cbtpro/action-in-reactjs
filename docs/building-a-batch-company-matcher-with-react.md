@@ -107,7 +107,8 @@ export interface DeduplicatedCompanyMatch extends CompanyMatch {
 
 左侧的“阿里巴巴”与右侧的标准企业不是因为文字相似而高亮，也不是因为它们碰巧都在第 2 行，而是因为右侧结果的 `sourceIds` 包含 `source-1`。
 
-因此页面只保存一份状态：当前激活了哪些来源 ID。
+因此交互层只保存一份高亮状态：当前激活了哪些来源 ID。这份状态由
+`useCompanyMatchInteractions` 管理，页面组件只把它传给左右两侧的行组件。
 
 - hover 左侧 `source-1`：激活 `['source-1']`；
 - hover 右侧 `company-alibaba`：激活 `['source-0', 'source-1']`；
@@ -436,7 +437,7 @@ displayedResults.forEach((result, resultIndex) => {
 })
 ```
 
-左侧滚动时，根据 `scrollTop` 和固定行高得到首个可见行的全局下标，再还原 `sourceId`，最后查询右侧结果下标：
+左侧滚动时，`useCompanyMatchInteractions` 根据 `scrollTop` 和固定行高得到首个可见行的全局下标，再还原 `sourceId`，最后查询右侧结果下标：
 
 ```ts
 const sourceIndex = Math.floor(offset / VIRTUAL_ROW_HEIGHT)
@@ -469,7 +470,7 @@ const nearestSourceId = result.sourceIds.reduce((nearestId, sourceId) => {
 
 调用 `scrollToIndex` 会触发目标列表的 `scroll` 事件。如果目标列表继续反向同步，两个列表会互相修改位置，出现抖动甚至回到开头。
 
-容器使用两个 ref 标记本次程序化滚动的目标和预期偏移：
+交互 hook 使用两个 ref 标记本次程序化滚动的目标和预期偏移：
 
 ```ts
 syncingScrollTargetRef.current = 'result'
@@ -493,18 +494,89 @@ syncingScrollOffsetRef.current = resultListRef.current?.scrollToIndex(index)
 
 虚拟列表从有数据变为空，再恢复数据时，滚动容器不会卸载。`useLayoutEffect` 会把 DOM 的 `scrollTop` 和 React 内部状态一起限制到新的最大偏移，避免恢复后仍按旧位置渲染空窗口。
 
-## 四、组件如何解耦，以及如何通信
+## 四、组件和 hooks 如何解耦，以及如何通信
 
-### 原理：列表负责“怎么滚”，容器负责“滚到哪里”
+### 原理：先按变化原因拆分，再按数据流组合
 
-如果把业务匹配关系写进 `VirtualList`，它就只能用于公司匹配；如果让左右列表互相持有对方 ref，两侧会形成循环依赖；如果让 SVG 自己查询所有 DOM，它又会开始理解业务数据。
+这个页面有三类变化原因：企业数据和匹配规则会变化，hover、滚动和连线策略会变化，页面布局也会变化。如果都放在 `CompanyMatchDemo.tsx` 中，修改任何一类功能都要进入同一个大组件，业务状态、DOM ref、定时器和 JSX 也会互相干扰。
 
-当前设计给每层划定了边界：
+现在的结构把它们拆成三个层次：
 
-- 数据模块回答“哪些来源属于同一结果”；
-- `VirtualList` 回答“给定数据和偏移，应渲染哪些行”；
-- 页面容器回答“用户操作一侧时，另一侧应该定位到哪条数据”；
-- SVG 层回答“两个已经挂载的元素应该怎样连接”。
+```text
+CompanyMatchDemo.tsx
+  ├─ useCompanyMatchModel            匹配数据与结果视图模型
+  ├─ useCompanyMatchInteractions     双列表 hover、滚动与连线
+  └─ 展示组件
+       ├─ VirtualList
+       ├─ SourceListItem / ResultListItem
+       ├─ ConnectorSvgLayer
+       └─ MatchOutputDrawer
+```
+
+`CompanyMatchDemo.tsx` 不再保存企业匹配细节，也不再直接管理 animation frame、延迟任务和 DOM Map。它只调用两个 hook，把返回的数据和事件处理器连接到展示组件。
+
+### 数据模型 hook：只处理“页面要展示什么”
+
+`useCompanyMatchModel` 管理输入、逐条匹配、人工纠错、去重、排序、过滤和输出抽屉状态。它根据原始 state 派生出 `displayedResults`、`resultIndexBySourceId` 和 `resultByKey`，但不读取 DOM，也不知道列表当前滚到了哪里。
+
+页面使用时不需要重复理解这些派生关系：
+
+```tsx
+const model = useCompanyMatchModel()
+
+<VirtualList
+  items={model.displayedResults}
+  getKey={getResultKey}
+  renderItem={(result) => (
+    <ResultListItem result={result} />
+  )}
+/>
+```
+
+输入改变时需要同时清空旧匹配结果、编辑状态和耗时；人工匹配后需要更新指定来源并关闭编辑面板。这些更新顺序都属于数据模型，收进 hook 后，页面不会遗漏其中一步。
+
+### 交互 hook：只处理“用户操作后两侧怎样联动”
+
+`useCompanyMatchInteractions` 接收已经整理好的结果和索引：
+
+```tsx
+const interactions = useCompanyMatchInteractions({
+  displayedResults: model.displayedResults,
+  resultIndexBySourceId: model.resultIndexBySourceId,
+  resultByKey: model.resultByKey,
+  hasResult: model.hasResult,
+  isSourceInputCollapsed,
+  onRenderedSourceCountChange: setRenderedSourceCount,
+  onRenderedResultCountChange: setRenderedResultCount,
+})
+```
+
+它负责以下内容：
+
+- 保存 `activeSourceIds`，驱动两侧高亮；
+- 登记当前虚拟窗口中的来源和结果 DOM；
+- 通过受限 ref 让另一侧列表滚到业务相关项；
+- 用同步锁阻止程序化滚动反向回传；
+- 滚动时隐藏连线，并在鼠标静止时重新识别 hover；
+- 调度 SVG 端点测量、延迟显示和失效清理。
+
+这个 hook 不执行公司匹配，也不修改企业结果。它只消费稳定 ID、结果索引和已挂载 DOM，因此更换匹配算法不会影响滚动与连线。
+
+### 无副作用工具：让两个 hook 共用同一种键
+
+`companyMatchViewModel.ts` 放置输入解析、结果键和来源下标解析等纯函数：
+
+```ts
+export const getResultKey = (result: DeduplicatedCompanyMatch) =>
+  result.company?.id ?? result.sourceId
+
+export const getSourceIndex = (sourceId: string) => {
+  const match = /^source-(\d+)$/.exec(sourceId)
+  return match ? Number(match[1]) : null
+}
+```
+
+数据模型用 `getResultKey` 建立 `resultByKey`，交互 hook 用同一个函数登记和查找 DOM，虚拟列表也用它作为 React key。键规则只有一个来源，后续调整未匹配项的键格式时不会出现数据索引和 DOM Map 不一致。
 
 ### 按职责分层
 
@@ -512,37 +584,40 @@ syncingScrollOffsetRef.current = resultListRef.current?.scrollToIndex(index)
 | --- | --- | --- |
 | `companyData.ts` | 企业目录、Logo、简称和模型样本 | 页面滚动与 hover |
 | `deduplicateMatches.ts` | 按企业 ID 聚合结果并保留来源 | 列表如何展示 |
-| `performanceData.ts` | 生成稳定的大数据测试输入 | 匹配页面状态 |
-| `VirtualList.tsx` | 计算虚拟窗口并提供滚动能力 | 具体业务字段 |
-| `CompanyMatchDemo.tsx` | 组合业务数据、列表状态和交互协调 | 数据的生成方式 |
-
-去重器和测试数据生成器是独立的数据处理模块，可以单独测试。`VirtualList` 是通用基础组件，可以复用到联系人、专利等固定行高列表。页面容器只负责把这些能力组合起来。
+| `useCompanyMatchModel.ts` | 管理输入、匹配、过滤和结果索引 | DOM、滚动位置和 SVG 坐标 |
+| `useCompanyMatchInteractions.ts` | 管理高亮、双向滚动、DOM 登记和连线调度 | 企业如何完成匹配 |
+| `companyMatchViewModel.ts` | 提供稳定键和解析纯函数 | React 状态和组件生命周期 |
+| `VirtualList.tsx` | 计算虚拟窗口并提供滚动能力 | 具体业务字段和另一侧列表 |
+| `ConnectorSvgLayer.tsx` | 渲染已经计算好的 SVG 路径 | 端点怎样选择和测量 |
+| `CompanyMatchDemo.tsx` | 连接 hooks 与展示组件，描述页面布局 | 匹配和滚动算法的内部步骤 |
 
 ### 用一次左侧 hover 看清通信过程
 
 一次完整通信按照下面的顺序发生：
 
 ```text
-左侧行触发 mouseenter(sourceId)
+SourceListItem 触发 mouseenter(sourceId)
   ↓ callback
-页面容器查询 resultIndexBySourceId
-  ↓ imperative ref
+useCompanyMatchInteractions 查询 resultIndexBySourceId
+  ↓ VirtualListHandle
 右侧 VirtualList.scrollToIndex(resultIndex)
   ↓ React 渲染
-右侧虚拟窗口挂载目标行
+ResultListItem 挂载，并把 DOM 登记到交互 hook
   ↓ onRenderedRangeChange callback
-页面容器从 DOM Map 读取两端并刷新 SVG
+交互 hook 测量两端，生成 ConnectorLayer
+  ↓ props
+ConnectorSvgLayer 渲染路径
 ```
 
-这个流程里，左侧行不知道右侧列表的存在；`VirtualList` 不知道滚动目标是一家公司；SVG 也不负责决定哪两条数据相关。所有跨模块决策都集中在页面容器中。
+这个流程里，左侧行不知道右侧列表的存在；`VirtualList` 不知道滚动目标是一家公司；SVG 组件也不负责判断哪两条数据相关。跨列表决策集中在交互 hook，而不是散落在两个列表项或页面 JSX 中。
 
-### 组件之间使用四种明确的通信方式
+### 模块之间使用四种明确的通信方式
 
 #### 1. Props 传递数据和渲染函数
 
-容器把 `items`、`itemHeight`、`getKey` 和 `renderItem` 交给虚拟列表。虚拟列表不读取外部业务状态，也不导入企业类型。
+页面把 `items`、`itemHeight`、`getKey` 和 `renderItem` 交给虚拟列表。虚拟列表不读取外部业务状态，也不导入企业类型。`ConnectorSvgLayer` 同样只接收 `ConnectorLayer`，不会主动查询 DOM。
 
-#### 2. Callback 把事件交还容器
+#### 2. Callback 把事件交给交互 hook
 
 虚拟列表通过两个回调报告变化：
 
@@ -551,11 +626,20 @@ onScrollOffset?: (offset: number) => void
 onRenderedRangeChange?: (count: number) => void
 ```
 
-`onScrollOffset` 用于两侧关联滚动；`onRenderedRangeChange` 表示虚拟窗口已经换行，容器可以重新测量 SVG 端点。列表组件不直接操作另一侧列表。
+页面只做绑定：
+
+```tsx
+<VirtualList
+  onScrollOffset={interactions.handleSourceScroll}
+  onRenderedRangeChange={interactions.handleSourceRenderedRangeChange}
+/>
+```
+
+`onScrollOffset` 驱动关联滚动；`onRenderedRangeChange` 表示虚拟窗口已经换行，可以重新测量 SVG 端点。列表组件不直接操作另一侧列表。
 
 #### 3. 受限的 imperative ref 提供定位能力
 
-容器只通过 `VirtualListHandle` 请求滚动：
+交互 hook 只通过 `VirtualListHandle` 请求滚动：
 
 ```ts
 export interface VirtualListHandle {
@@ -568,9 +652,9 @@ export interface VirtualListHandle {
 
 #### 4. 稳定 ID 连接业务状态和当前 DOM
 
-React 状态只保存 `sourceId`，不保存 DOM。SVG 绘制层再通过 `sourceItemRefs` 和 `resultItemRefs` 查找当前已挂载节点。这样业务关系不会依赖虚拟列表当前复用了哪个 DOM 位置。
+React state 只保存 `sourceId`，不保存 DOM。交互 hook 通过 `sourceItemRefs` 和 `resultItemRefs` 查找当前已挂载节点，再把普通路径数据交给 SVG 组件。这样业务关系不会依赖虚拟列表当前复用了哪个 DOM 位置。
 
-整个页面不需要全局事件总线。数据向下通过 props，交互向上通过 callback，必要的滚动命令通过受限 ref 发出，跨列表关系通过稳定 ID 解析。每一层都只知道完成自身职责所需的最少信息。
+整个页面不需要 Context 或全局事件总线。数据模型 hook 向页面提供视图数据，事件通过 callback 进入交互 hook，必要的滚动命令通过受限 ref 发出，展示组件只消费 props。新增匹配策略时修改模型层，调整滚动与连线时修改交互层，替换视觉样式时修改展示组件，彼此不需要同步重写。
 
 ## 人工纠错与最终输出
 
