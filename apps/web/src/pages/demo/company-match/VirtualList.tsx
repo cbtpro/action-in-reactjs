@@ -17,7 +17,19 @@ import type {
 } from 'react'
 
 export interface VirtualListHandle {
+  /**
+   * 滚动到指定数据索引。
+   *
+   * @param index - 目标数据的零基索引。
+   * @returns 实际滚动偏移；列表尚未挂载时返回 `null`。
+   */
   scrollToIndex: (index: number) => number | null
+  /**
+   * 滚动到指定纵向偏移。
+   *
+   * @param offset - 期望的纵向滚动偏移。
+   * @returns 经过边界限制后的实际偏移；列表尚未挂载时返回 `null`。
+   */
   scrollToOffset: (offset: number) => number | null
 }
 
@@ -40,6 +52,10 @@ interface VirtualListProps<T> {
  *
  * 列表只负责窗口计算和滚动，不感知企业数据。不同业务列表通过 renderItem
  * 组合内容，后续可直接复用在联系人、专利等批量匹配场景。
+ *
+ * @param props - 列表数据、固定行高、渲染函数和滚动回调。
+ * @param ref - 提供按索引或偏移滚动能力的外部引用。
+ * @returns 仅挂载可见范围及缓冲行的虚拟列表。
  */
 function VirtualListInner<T>(
   {
@@ -69,6 +85,7 @@ function VirtualListInner<T>(
     const viewport = viewportRef.current
     if (!viewport) return
 
+    /** 读取列表真实高度并同步虚拟窗口尺寸。 */
     const updateHeight = () => {
       const nextHeight = viewport.clientHeight
       if (nextHeight > 0) setViewportHeight(nextHeight)
@@ -119,6 +136,12 @@ function VirtualListInner<T>(
     visibleRange.start,
   ])
 
+  /**
+   * 将列表滚动到安全范围内的目标偏移。
+   *
+   * @param offset - 期望的纵向滚动偏移。
+   * @returns 实际采用的偏移；列表尚未挂载时返回 `null`。
+   */
   const scrollToOffset = useCallback(
     (offset: number) => {
       const viewport = viewportRef.current
@@ -147,6 +170,12 @@ function VirtualListInner<T>(
     [itemHeight, scrollToOffset],
   )
 
+  /**
+   * 同步用户滚动产生的偏移并通知调用方。
+   *
+   * @param event - 虚拟列表视口的滚动事件。
+   * @returns 无返回值。
+   */
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const offset = event.currentTarget.scrollTop
     setScrollTop(offset)
@@ -188,6 +217,7 @@ function VirtualListInner<T>(
   )
 }
 
+/** 支持泛型数据和受限滚动句柄的固定行高虚拟列表。 */
 export const VirtualList = forwardRef(VirtualListInner) as <T>(
   props: VirtualListProps<T> & { ref?: Ref<VirtualListHandle> },
 ) => ReactElement

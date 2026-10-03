@@ -16,6 +16,9 @@ export interface CompanyLogoProps {
  * 当前采用“固定字号 + 自动换行”的折中方案做字体自适应：简称超过两个字时
  * 拆成两行显示，而不是根据容器宽度动态计算 font-size，详见项目文档
  * docs/building-a-batch-company-matcher-with-react.md 的“公司头像如何实现”一节。
+ *
+ * @param props - 已匹配企业及其人工维护的品牌简称。
+ * @returns 完整展示的真实 Logo，或按两字一行排版的文字头像。
  */
 export function CompanyLogo({ company, shortName }: CompanyLogoProps) {
   if (company?.logo.src) {

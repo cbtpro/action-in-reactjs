@@ -1,5 +1,6 @@
 import { Typography } from 'antd'
 
+/** Ant Design 标题和文本组件的局部别名。 */
 const { Text, Title } = Typography
 
 export interface CompanyMatchHeroProps {
@@ -10,7 +11,10 @@ export interface CompanyMatchHeroProps {
 }
 
 /**
- * 页面顶部标题与三项汇总统计（待处理 / 已匹配 / 待确认）。
+ * 渲染页面标题和待处理、已匹配、待确认三项汇总统计。
+ *
+ * @param props - 当前输入和匹配状态的数量统计。
+ * @returns 批量匹配页面的顶部信息区。
  */
 export function CompanyMatchHero({
   pendingCount,

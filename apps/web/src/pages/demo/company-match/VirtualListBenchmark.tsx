@@ -12,6 +12,9 @@ export interface VirtualListBenchmarkProps {
 /**
  * 虚拟列表性能验证工具条：一键生成大批量测试数据，并展示匹配耗时、
  * 去重后数量和当前单列实际渲染的 DOM 行数，用来直观验证虚拟滚动效果。
+ *
+ * @param props - 测试数据生成回调和当前性能统计。
+ * @returns 性能测试操作与统计工具条。
  */
 export function VirtualListBenchmark({
   onCreateTestData,

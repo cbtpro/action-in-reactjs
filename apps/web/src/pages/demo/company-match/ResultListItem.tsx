@@ -22,6 +22,9 @@ export interface ResultListItemProps {
  *
  * 未匹配词条额外渲染一个人工纠错入口（Popover + CandidatePicker），
  * 匹配成功的词条渲染企业头像与匹配方式/置信度信息。
+ *
+ * @param props - 去重结果、交互状态、DOM 登记和人工匹配回调。
+ * @returns 标准企业结果虚拟列表中的单行结果。
  */
 export function ResultListItem({
   result,

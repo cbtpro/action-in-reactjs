@@ -27,13 +27,13 @@ const runTimers = async (duration: number) => {
 }
 
 const enterCompanyNames = (names: string[]) => {
-  fireEvent.change(screen.getByPlaceholderText('请输入公司名称，每行一家'), {
+  fireEvent.change(screen.getByPlaceholderText('请输入公司名称或统一社会信用代码，每行一条'), {
     target: { value: names.join('\n') },
   })
   fireEvent.click(screen.getByRole('button', { name: '开始匹配' }))
 }
 
-describe('批量公司匹配滚动回归', () => {
+describe('批量公司匹配回归', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
@@ -48,13 +48,40 @@ describe('批量公司匹配滚动回归', () => {
         return rect(0, 0, 900, 600)
       }
       if (this.classList.contains('company-source-item')) {
-        return rect(120, 100, 260, 76)
+        const sourceIndex = Number(this.dataset.sourceId?.replace('source-', '') ?? 0)
+        const scrollTop = this.closest<HTMLElement>('.virtual-list')?.scrollTop ?? 0
+        return rect(120, 100 + sourceIndex * 84 - scrollTop, 260, 76)
       }
       if (this.classList.contains('company-result-item')) {
         return rect(620, 100, 240, 76)
       }
       return rect(0, 0, 0, 0)
     })
+  })
+
+  it('输入统一社会信用代码后展示对应标准企业', () => {
+    render(<CompanyMatchDemoPage />)
+    enterCompanyNames(['91440300708461136T'])
+
+    const resultList = screen.getByRole('list', { name: '企业匹配结果' })
+    expect(resultList.textContent).toContain('深圳市腾讯计算机系统有限公司')
+    expect(resultList.textContent).toContain('统一社会信用代码')
+    expect(resultList.textContent).toContain('100%')
+  })
+
+  it('收起和展开原始输入时保留已经输入的内容', () => {
+    render(<CompanyMatchDemoPage />)
+    const input = screen.getByPlaceholderText('请输入公司名称或统一社会信用代码，每行一条')
+    fireEvent.change(input, { target: { value: '腾讯\n华为' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '收起原始企业名单' }))
+    expect(screen.queryByPlaceholderText('请输入公司名称或统一社会信用代码，每行一条')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '展开原始企业名单' }))
+    const restoredInput = screen.getByPlaceholderText(
+      '请输入公司名称或统一社会信用代码，每行一条',
+    ) as HTMLTextAreaElement
+    expect(restoredInput.value).toBe('腾讯\n华为')
   })
 
   it('用户滚动时立即隐藏连线，鼠标静止时按当前位置恢复连线', async () => {
@@ -71,8 +98,7 @@ describe('批量公司匹配滚动回归', () => {
 
     expect(container.querySelectorAll('.company-match-connector__ants')).toHaveLength(1)
 
-    vi.mocked(document.elementFromPoint).mockReturnValue(sourceItem!)
-    sourceList.scrollTop = 84
+    sourceList.scrollTop = 20
     fireEvent.scroll(sourceList)
 
     expect(container.querySelectorAll('.company-match-connector__ants')).toHaveLength(0)
@@ -80,6 +106,44 @@ describe('批量公司匹配滚动回归', () => {
     await runTimers(200)
     expect(container.querySelectorAll('.company-match-connector__ants')).toHaveLength(1)
     expect(sourceItem?.classList.contains('is-active')).toBe(true)
+    expect(document.elementFromPoint).not.toHaveBeenCalled()
+  })
+
+  it('同一页面存在多个实例时只在当前组件根节点内恢复 hover', async () => {
+    const { container } = render(
+      <>
+        <CompanyMatchDemoPage />
+        <CompanyMatchDemoPage />
+      </>,
+    )
+    const pages = Array.from(container.querySelectorAll('.company-match-page'))
+    expect(pages).toHaveLength(2)
+
+    pages.forEach((page) => {
+      const matchButton = page.querySelector<HTMLButtonElement>('[aria-label="开始匹配"]')
+      expect(matchButton).not.toBeNull()
+      fireEvent.click(matchButton!)
+    })
+
+    const sourceLists = pages.map((page) =>
+      page.querySelector<HTMLElement>('[aria-label="已解析企业词条"]'))
+    const sourceItems = pages.map((page) =>
+      Array.from(page.querySelectorAll<HTMLElement>('.company-source-item'))
+        .find((element) => element.textContent?.includes('华为科技')))
+    expect(sourceLists.every(Boolean)).toBe(true)
+    expect(sourceItems.every(Boolean)).toBe(true)
+
+    vi.mocked(document.elementFromPoint).mockReturnValue(sourceItems[1]!)
+    fireEvent.mouseEnter(sourceItems[0]!, { clientX: 220, clientY: 130 })
+    sourceLists[0]!.scrollTop = 20
+    fireEvent.scroll(sourceLists[0]!)
+
+    await runTimers(400)
+    await runTimers(200)
+
+    expect(sourceItems[0]?.classList.contains('is-active')).toBe(true)
+    expect(sourceItems[1]?.classList.contains('is-active')).toBe(false)
+    expect(document.elementFromPoint).not.toHaveBeenCalled()
   })
 
   it('从去重结果反向定位到当前视口最近的重复来源', async () => {

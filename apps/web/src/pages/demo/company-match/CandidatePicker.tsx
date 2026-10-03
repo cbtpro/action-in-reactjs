@@ -10,7 +10,10 @@ export interface CandidatePickerProps {
 }
 
 /**
- * 未匹配词条的人工纠错面板：按名称、简称或地区搜索企业目录，供用户手动选定。
+ * 渲染未匹配词条的人工纠错面板，并按名称、别名、信用代码或地区过滤目录。
+ *
+ * @param props - 当前来源名称和候选企业选择回调。
+ * @returns 可搜索并选择标准企业的面板。
  */
 export function CandidatePicker({ sourceName, onSelect }: CandidatePickerProps) {
   const [keyword, setKeyword] = useState('')
@@ -18,7 +21,7 @@ export function CandidatePicker({ sourceName, onSelect }: CandidatePickerProps) 
     const normalized = keyword.trim().toLocaleLowerCase()
     if (!normalized) return COMPANY_DIRECTORY
     return COMPANY_DIRECTORY.filter((company) =>
-      [company.name, ...company.aliases, company.region]
+      [company.name, ...company.aliases, company.creditCode, company.region]
         .join(' ')
         .toLocaleLowerCase()
         .includes(normalized),
@@ -32,7 +35,7 @@ export function CandidatePicker({ sourceName, onSelect }: CandidatePickerProps) 
         autoFocus
         allowClear
         prefix={<SearchOutlined />}
-        placeholder="搜索企业名称、简称或地区"
+        placeholder="搜索企业名称、简称、信用代码或地区"
         value={keyword}
         onChange={(event) => setKeyword(event.target.value)}
       />

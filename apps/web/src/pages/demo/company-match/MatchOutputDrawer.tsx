@@ -3,7 +3,9 @@ import type { ColumnsType } from 'antd/es/table/interface'
 import type { CompanyMatch } from './types'
 import type { DeduplicatedCompanyMatch } from './deduplicateMatches'
 
+/** 匹配类型在输出表格中的显示文案。 */
 const MATCH_KIND_LABEL: Record<CompanyMatch['kind'], string> = {
+  'credit-code': '信用代码命中',
   exact: '全称命中',
   alias: '简称命中',
   normalized: '智能命中',
@@ -11,6 +13,7 @@ const MATCH_KIND_LABEL: Record<CompanyMatch['kind'], string> = {
   unmatched: '未匹配',
 }
 
+/** 去重后标准企业名单的表格列配置。 */
 const outputColumns: ColumnsType<DeduplicatedCompanyMatch> = [
   {
     title: '原始词条来源',
@@ -56,6 +59,9 @@ export interface MatchOutputDrawerProps {
  *
  * 独立成组件后，表格列定义和匹配方式文案只在这里维护，
  * 不再占用主页面组件的篇幅。
+ *
+ * @param props - 抽屉状态、关闭回调和去重后的匹配统计。
+ * @returns 标准企业名单输出抽屉。
  */
 export function MatchOutputDrawer({
   open,

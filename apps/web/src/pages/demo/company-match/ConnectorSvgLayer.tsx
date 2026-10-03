@@ -19,6 +19,9 @@ export interface ConnectorSvgLayerProps {
  * 连线本身是两个 DOM 元素中心点换算出的几何路径，测量和防抖调度都在
  * useCompanyMatchInteractions 中完成，这里只负责把路径画出来，避免把定位逻辑和
  * SVG 渲染耦合在一起。
+ *
+ * @param props - 已计算完成的 SVG 画布尺寸和路径集合。
+ * @returns 覆盖工作区的只读连接线图层。
  */
 export function ConnectorSvgLayer({ layer }: ConnectorSvgLayerProps) {
   return (

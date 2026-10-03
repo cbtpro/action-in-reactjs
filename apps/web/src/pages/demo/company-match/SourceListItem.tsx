@@ -16,6 +16,9 @@ export interface SourceListItemProps {
 /**
  * 左侧“原始企业名单”虚拟列表的单行渲染，纯展示组件：
  * 不持有匹配/连线状态，只负责根据传入的匹配结果渲染序号、置信度和状态图标。
+ *
+ * @param props - 来源内容、匹配状态、DOM 登记和鼠标事件回调。
+ * @returns 来源虚拟列表中的单行词条。
  */
 export function SourceListItem({
   name,

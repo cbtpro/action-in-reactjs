@@ -2,6 +2,7 @@ import type { Company } from './types'
 import { COMPANY_LOGOS } from '../../../assets/images/company/logo'
 import { COMPANY_SHORT_NAMES } from './companyShortNames'
 
+/** 不含展示简称的标准企业基础目录。 */
 const BASE_COMPANY_DIRECTORY: Omit<Company, 'shortName'>[] = [
   {
     "id": "tencent",
@@ -1023,6 +1024,7 @@ const BASE_COMPANY_DIRECTORY: Omit<Company, 'shortName'>[] = [
   }
 ]
 
+/** 合并品牌简称和本地 Logo 资源后的页面标准企业目录。 */
 export const COMPANY_DIRECTORY: Company[] = BASE_COMPANY_DIRECTORY.map((company) => {
   const logoSrc = COMPANY_LOGOS[company.id]
   const shortName = COMPANY_SHORT_NAMES[company.id]
@@ -1042,6 +1044,7 @@ export const COMPANY_DIRECTORY: Company[] = BASE_COMPANY_DIRECTORY.map((company)
   }
 })
 
+/** 用户指定模型数据中用于生成稳定匹配样本的企业集合。 */
 const MODEL_SOURCE_COMPANIES = COMPANY_DIRECTORY.filter((company) =>
   company.id === 'huawei'
   || company.id === 'xiaomi'
@@ -1074,6 +1077,7 @@ export const MODEL_MATCH_TEST_CASES = MODEL_SOURCE_COMPANIES.map(
   },
 )
 
+/** 从模型测试用例中提取并去重的默认匹配输入。 */
 export const MODEL_MATCH_TEST_NAMES = [...new Set(
   MODEL_MATCH_TEST_CASES.map((testCase) => testCase.input),
 )]
